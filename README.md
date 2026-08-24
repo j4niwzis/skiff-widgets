@@ -40,3 +40,22 @@ keeps two Themes, which is cheaper than a knob per widget.
 
 The `Theme` is deliberately small. Each widget owns its copy, so overriding
 one field for one control does not mean inventing a scheme for the rest.
+
+## Building and testing
+
+`skiff-widgets` is the library project, `test` is a standalone test consumer
+and `all` is the aggregate project. skiff itself comes in from its own
+repository through CPM, pinned to a commit.
+
+```sh
+cmake -S all -B build -G Ninja
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+`-G Ninja` is not a preference. CMake only supports C++20 modules under
+Ninja; the Makefile generator does not scan for them, and the build fails
+without saying why.
+
+You also need a compiler that can do `import std` -- clang 19 or newer with
+libc++, or gcc 15 -- and Skia discoverable through `pkg-config` as `skia`.
