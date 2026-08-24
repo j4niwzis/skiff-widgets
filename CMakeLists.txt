@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.1.1 FATAL_ERROR)
 
-include(${CMAKE_CURRENT_LIST_DIR}/../cmake/import-std.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/import-std.cmake)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # The widget set that sits on skiff: ready-made controls a screen is built
@@ -23,8 +23,12 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
 endif()
 
 if(NOT TARGET skiff::skiff)
-  include(../cmake/CPM.cmake)
-  CPMAddPackage(NAME skiff SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../skiff)
+  include(cmake/CPM.cmake)
+  CPMAddPackage(
+    NAME skiff
+    GITHUB_REPOSITORY j4niwzis/skiff
+    GIT_TAG 8dbed41ebd80094a22d63055a73ed70890b50436
+  )
 endif()
 
 # Globbed, so that adding a widget is adding a file.
