@@ -270,10 +270,15 @@ protected:
     if (event.fPhase != EventPhase::kTarget) {
       return;
     }
-    // Padding and row gaps are part of the open popover. Consume both ends
-    // of a tap so its release cannot reach whatever the dropdown covers.
-    if (event.fAction == PointerAction::kDown ||
-        event.fAction == PointerAction::kUp) {
+    // Padding and row gaps are part of the open popover. Capture the gesture
+    // so a later release still belongs here even if the owner closes the
+    // dropdown in response to the press.
+    if (event.fAction == PointerAction::kDown) {
+      event.capturePointer();
+      event.handle();
+    } else if (event.fAction == PointerAction::kUp ||
+               event.fAction == PointerAction::kCancel) {
+      event.releasePointer();
       event.handle();
     }
   }
@@ -340,22 +345,20 @@ private:
       }
       switch (event.fAction) {
       case PointerAction::kDown:
-        fArmed = true;
+        // Choosing on down is the widget's existing contract: screens read
+        // their action immediately after dispatching the press. Pointer
+        // capture keeps the matching release from falling through after the
+        // callback collapses this list.
+        event.capturePointer();
+        if (fList->fOnChoose) {
+          fList->fOnChoose(static_cast<int>(fIndex));
+        }
         event.handle();
         break;
       case PointerAction::kUp:
-        if (std::exchange(fArmed, false) &&
-            fBounds.contains(event.fX, event.fY)) {
-          if (fList->fOnChoose) {
-            fList->fOnChoose(static_cast<int>(fIndex));
-          }
-          // fOnChoose commonly collapses the list. The release still belongs
-          // to this row and must not be offered to the newly exposed target.
-          event.handle();
-        }
-        break;
       case PointerAction::kCancel:
-        fArmed = false;
+        event.releasePointer();
+        event.handle();
         break;
       default:
         break;
@@ -365,7 +368,6 @@ private:
   private:
     DropdownList *fList;
     std::size_t fIndex;
-    bool fArmed = false;
   };
 
   std::vector<std::string> fLabels;

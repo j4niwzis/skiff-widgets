@@ -68,11 +68,14 @@ TEST(Dropdown, ButtonAndRowsRouteTheirOwnClicks) {
   down.fX = 20.0f;
   down.fY = 64.0f;
   EXPECT_TRUE(root->dispatchPointer(down));
-  EXPECT_EQ(chosen, -1);
+  EXPECT_EQ(chosen, 1);
+  EXPECT_FALSE(list->expanded());
+  EXPECT_NE(root->capturedNode(), nullptr);
   scene::PointerEvent up = down;
   up.fAction = scene::PointerAction::kUp;
   EXPECT_TRUE(root->dispatchPointer(up));
   EXPECT_EQ(chosen, 1);
+  EXPECT_EQ(root->capturedNode(), nullptr);
 
   EXPECT_FALSE(list->expanded());
   EXPECT_FALSE(root->click(20.0f, 64.0f));
