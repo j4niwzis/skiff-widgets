@@ -54,16 +54,26 @@ TEST(Dropdown, ButtonAndRowsRouteTheirOwnClicks) {
       {.y = 34.0f, .width = 120.0f});
   list->setOptions({"Artist", "Title"});
   list->setCurrent(1);
-  list->fOnChoose = [&chosen](int index) { chosen = index; };
+  list->fOnChoose = [&chosen, list](int index) {
+    chosen = index;
+    list->setExpanded(false);
+  };
   root->layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 120.0f));
 
   EXPECT_TRUE(list->expanded());
   EXPECT_TRUE(root->click(20.0f, 15.0f));
   EXPECT_EQ(opened, 1);
-  EXPECT_TRUE(root->click(20.0f, 64.0f));
+  scene::PointerEvent down;
+  down.fAction = scene::PointerAction::kDown;
+  down.fX = 20.0f;
+  down.fY = 64.0f;
+  EXPECT_TRUE(root->dispatchPointer(down));
+  EXPECT_EQ(chosen, -1);
+  scene::PointerEvent up = down;
+  up.fAction = scene::PointerAction::kUp;
+  EXPECT_TRUE(root->dispatchPointer(up));
   EXPECT_EQ(chosen, 1);
 
-  list->setExpanded(false);
   EXPECT_FALSE(list->expanded());
   EXPECT_FALSE(root->click(20.0f, 64.0f));
 }

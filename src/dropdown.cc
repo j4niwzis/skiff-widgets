@@ -264,7 +264,19 @@ protected:
   bool acceptsInput() const override { return fVisible; }
   bool focusable() const override { return false; }
   bool hoverChangesAppearance() const override { return false; }
-  bool onClick(float, float) override { return true; }
+  void onPointerEvent(skiff::scene::PointerEvent &event) override {
+    using skiff::scene::EventPhase;
+    using skiff::scene::PointerAction;
+    if (event.fPhase != EventPhase::kTarget) {
+      return;
+    }
+    // Padding and row gaps are part of the open popover. Consume both ends
+    // of a tap so its release cannot reach whatever the dropdown covers.
+    if (event.fAction == PointerAction::kDown ||
+        event.fAction == PointerAction::kUp) {
+      event.handle();
+    }
+  }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const override {
     skiff::scene::Semantics out;
@@ -320,16 +332,40 @@ private:
       return out;
     }
 
-    bool onClick(float, float) override {
-      if (fList->fOnChoose) {
-        fList->fOnChoose(static_cast<int>(fIndex));
+    void onPointerEvent(skiff::scene::PointerEvent &event) override {
+      using skiff::scene::EventPhase;
+      using skiff::scene::PointerAction;
+      if (event.fPhase != EventPhase::kTarget) {
+        return;
       }
-      return true;
+      switch (event.fAction) {
+      case PointerAction::kDown:
+        fArmed = true;
+        event.handle();
+        break;
+      case PointerAction::kUp:
+        if (std::exchange(fArmed, false) &&
+            fBounds.contains(event.fX, event.fY)) {
+          if (fList->fOnChoose) {
+            fList->fOnChoose(static_cast<int>(fIndex));
+          }
+          // fOnChoose commonly collapses the list. The release still belongs
+          // to this row and must not be offered to the newly exposed target.
+          event.handle();
+        }
+        break;
+      case PointerAction::kCancel:
+        fArmed = false;
+        break;
+      default:
+        break;
+      }
     }
 
   private:
     DropdownList *fList;
     std::size_t fIndex;
+    bool fArmed = false;
   };
 
   std::vector<std::string> fLabels;
