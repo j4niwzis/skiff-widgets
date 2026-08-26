@@ -27,7 +27,7 @@ if(NOT TARGET skiff::skiff)
   CPMAddPackage(
     NAME skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 3ef9effb268ab924c3cb3510a5849db116d7c6f2
+    GIT_TAG 9f65a1e2494ca6ec943211acda4a078da5ac4b6c
   )
 endif()
 
