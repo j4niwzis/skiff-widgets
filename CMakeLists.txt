@@ -22,13 +22,26 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds not allowed.")
 endif()
 
-if(NOT TARGET skiff::skiff)
-  include(cmake/CPM.cmake)
-  CPMAddPackage(
+# Where skiff comes from, and nothing else about it.
+#
+# This is the half of a port declaration that belongs to whoever chose the
+# library: a repository and a revision. The other half -- what skiff needs,
+# what it produces, what it is licensed under -- is in skiff's own tree and
+# is read from there once it has been fetched, so it is not repeated here and
+# cannot go stale here.
+if(COMMAND cme_declare_port AND NOT TARGET skiff::skiff)
+  cme_declare_port(
     NAME skiff
+    PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 9f65a1e2494ca6ec943211acda4a078da5ac4b6c
+    GIT_TAG 
   )
+endif()
+
+# One call, answered by whatever is right: a target this build already has,
+# a copy installed on the machine, or the revision named above.
+if(NOT TARGET skiff::skiff)
+  find_package(skiff REQUIRED)
 endif()
 
 # Globbed, so that adding a widget is adding a file.
@@ -51,4 +64,47 @@ target_link_libraries(${PROJECT_NAME} PUBLIC skiff::skiff)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   target_compile_options(${PROJECT_NAME} PRIVATE -fexceptions -pthread -msimd128)
+endif()
+
+# ---- What this library is, said by the library ----
+if(COMMAND cme_declare_port)
+  cme_declare_port(
+    NAME skiff-widgets
+    PROVIDES skiff-widgets skiff_widgets
+    VERSION ${PROJECT_VERSION}
+    GITHUB_REPOSITORY j4niwzis/skiff-widgets
+    GIT_TAG main
+    LICENSE AGPL-3.0-or-later
+    DEPENDS skiff
+    TARGETS skiff::widgets
+  )
+endif()
+
+# ---- Installing it ----
+# Installing is what a build of this library does; a build that embeds it
+# does not.
+#
+# Inside another build its dependencies are that build's targets -- Skia
+# comes from a port, as skia_skia -- and exporting a target that links one of
+# those is an error: "requires target skia_skia that is not in any export
+# set". Which is right. What would be installed there is a library whose
+# dependencies exist only in the build directory it came from.
+option(SKIFF_WIDGETS_INSTALL "Install skiff-widgets and its CMake package"
+       ${PROJECT_IS_TOP_LEVEL})
+if(SKIFF_WIDGETS_INSTALL)
+  include(GNUInstallDirs)
+  install(TARGETS ${PROJECT_NAME}
+    EXPORT skiffWidgetsTargets
+    FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_LIBDIR}/skiff-widgets/modules
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(EXPORT skiffWidgetsTargets
+    NAMESPACE skiff::
+    CXX_MODULES_DIRECTORY modules
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/skiff-widgets)
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/skiff-widgetsConfig.cmake"
+    "include(CMakeFindDependencyMacro)\n"
+    "find_dependency(skiff)\n"
+    "include(\"\${CMAKE_CURRENT_LIST_DIR}/skiffWidgetsTargets.cmake\")\n")
+  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/skiff-widgetsConfig.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/skiff-widgets)
 endif()
