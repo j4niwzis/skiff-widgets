@@ -34,7 +34,7 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::skiff)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 
+    GIT_TAG 0a63cc3d5c3772e633f5cf38e193c1683333be13
   )
 endif()
 
@@ -57,6 +57,14 @@ add_library(skiff::widgets ALIAS ${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PUBLIC
   FILE_SET CXX_MODULES FILES ${skiff_widget_sources})
+
+# The name this is linked by, in a build that embeds it and in one that
+# finds it installed. The alias skiff::widgets is a build-tree name and is
+# not exported; install(EXPORT NAMESPACE skiff::) exports the target's own
+# name, so an installed copy offered skiff::skiff-widgets and a consumer
+# written against the alias stopped at "links to skiff::widgets, but the
+# target was not found". EXPORT_NAME makes the two the same word.
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME widgets)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 23)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
