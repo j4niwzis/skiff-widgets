@@ -108,7 +108,7 @@ if(COMMAND cme_declare_port)
     VERSION ${PROJECT_VERSION}
     GITHUB_REPOSITORY j4niwzis/skiff-widgets
     GIT_TAG main
-    LICENSE AGPL-3.0-or-later
+    LICENSE AGPL-3.0-only
     DEPENDS skiff
     TARGETS skiff::widgets
   )
