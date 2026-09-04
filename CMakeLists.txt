@@ -12,11 +12,37 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Every widget is its own module -- skiff.widgets.textbox, .button, .tabbar --
 # so a screen imports the ones it uses. skiff.widgets is the umbrella for a
 # screen that wants all of them.
+
+# Where skiff comes from, and everything skiff needs after it.
+#
+# cmake-everywhere answers find_package: from the machine when the machine
+# has the library, and from the revision named below when it does not. Named
+# before project(), because that is the only place a dependency provider may
+# be installed from -- and only when nothing is answering already, which is
+# the case where this is being built inside somebody else's build and that
+# build brought its own.
+if(NOT COMMAND cme_declare_port AND NOT CMAKE_PROJECT_TOP_LEVEL_INCLUDES)
+  set(CMAKE_PROJECT_TOP_LEVEL_INCLUDES ${CMAKE_CURRENT_LIST_DIR}/cmake/get_cme.cmake)
+endif()
+
 project(
   skiff-widgets
   VERSION 0.1
   LANGUAGES CXX
 )
+
+# CMAKE_PROJECT_TOP_LEVEL_INCLUDES is read by the top-level project() call
+# and by no other, so a build configured from a subdirectory of this has no
+# provider and no sign of it: the declaration below is read by nobody and
+# find_package(skiff) falls through to whatever the machine has, which for a
+# library of one's own is usually a copy from a month ago.
+if(NOT COMMAND cme_provider)
+  message(FATAL_ERROR
+    "cmake-everywhere is not installed in this build, so nothing answers "
+    "find_package(skiff). CMAKE_PROJECT_TOP_LEVEL_INCLUDES is only read by "
+    "the top-level project() call: configure this directory, and not a "
+    "subdirectory of it.")
+endif()
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds not allowed.")
@@ -34,7 +60,7 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::skiff)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 0a63cc3d5c3772e633f5cf38e193c1683333be13
+    GIT_TAG 38c34fdd1a0491a4485157e1f754e6d5f8662c58
   )
 endif()
 
