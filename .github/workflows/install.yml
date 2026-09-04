@@ -234,15 +234,20 @@ jobs:
       # the machine, in the prefix beside this, so nothing should be fetched
       # or built at all.
       #
-      # CME_OFFLINE with an empty source cache is what makes that a test
+      # CME_OFFLINE is what makes that a test
       # rather than a hope: if either library were taken from anywhere but
       # the prefix, there would be nothing to take it from.
       - name: found through cmake-everywhere, from the prefix
         run: |
+          # The provider this project pins, rather than whatever is at the
+          # tip of its main branch: a test that reaches for somebody else's
+          # tip fails on somebody else's push, which says nothing about
+          # this.
+          pin=$(sed -n 's/^set(CME_PINNED "\(.*\)")$/\1/p' cmake/get_cme.cmake)
           curl -sSL -o /tmp/cme.tar.gz \
-            https://github.com/j4niwzis/cmake-everywhere/archive/main.tar.gz
+            "https://github.com/j4niwzis/cmake-everywhere/archive/$pin.tar.gz"
           mkdir -p /tmp/cme && tar xzf /tmp/cme.tar.gz -C /tmp/cme --strip-components=1
-          mkdir -p /tmp/consumer-cme /tmp/empty-cache
+          mkdir -p /tmp/consumer-cme
           cp /tmp/consumer/main.cc /tmp/consumer-cme/main.cc
           cat > /tmp/consumer-cme/CMakeLists.txt <<'EOF'
           cmake_minimum_required(VERSION 4.3.4 FATAL_ERROR)
@@ -273,7 +278,9 @@ jobs:
             -DCMAKE_CXX_FLAGS="-stdlib=libstdc++" \
             -DCMAKE_CXX_STDLIB_MODULES_JSON=/tmp/libstdc++.modules.json \
             -DCMAKE_PREFIX_PATH="$PWD/prefix" \
-            -DCME_OFFLINE=ON -DCPM_SOURCE_CACHE=/tmp/empty-cache
+            -DCME_OFFLINE=ON \
+            -DCME_STORE_ENABLED=ON \
+            -DCME_SOURCES_ENABLED=ON
           cmake --build /tmp/consumer-cme/build
           /tmp/consumer-cme/build/consumer
           cat /tmp/consumer-cme/build/cme-report.txt
