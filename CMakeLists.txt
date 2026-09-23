@@ -60,7 +60,7 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::skiff)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 05e2991ae7079438027ed3e4041e40a81301171f
+    GIT_TAG d3e382284a40026159310c1b27f2b878571f7133
   )
 endif()
 
@@ -101,35 +101,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 
 # ---- What this library is, said by the library ----
-# The revision this copy is.
-#
-# Said as `main` before, which names no revision at all: a machine with this
-# library installed could not say which one it had, so a build pinning a
-# revision had nothing to compare against and built its own copy -- every
-# time, for every project, however many copies of the same thing were already
-# there. A checkout knows what it is, so it says.
-find_package(Git QUIET)
-set(SKIFF_WIDGETS_REVISION "main")
-if(Git_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-  execute_process(
-    COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    OUTPUT_VARIABLE skiff_widgets_head
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE skiff_widgets_head_result)
-  if(skiff_widgets_head_result EQUAL 0 AND skiff_widgets_head)
-    set(SKIFF_WIDGETS_REVISION "${skiff_widgets_head}")
-  endif()
-endif()
-
 if(COMMAND cme_declare_port)
   cme_declare_port(
     NAME skiff-widgets
     PROVIDES skiff-widgets skiff_widgets
     VERSION ${PROJECT_VERSION}
     GITHUB_REPOSITORY j4niwzis/skiff-widgets
-    GIT_TAG ${SKIFF_WIDGETS_REVISION}
+    GIT_TAG main
     LICENSE AGPL-3.0-only
     DEPENDS skiff
     TARGETS skiff::widgets
