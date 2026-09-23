@@ -243,9 +243,13 @@ jobs:
           # tip of its main branch: a test that reaches for somebody else's
           # tip fails on somebody else's push, which says nothing about
           # this.
-          pin=$(sed -n 's/^set(CME_PINNED "\(.*\)")$/\1/p' cmake/get_cme.cmake)
-          curl -sSL -o /tmp/cme.tar.gz \
-            "https://github.com/j4niwzis/cmake-everywhere/archive/$pin.tar.gz"
+          # The file the loader pins, by the URL and the digest it names --
+          # a release's uploaded archive, not one generated on request.
+          url=$(tr '\n' ' ' < cmake/get_cme.cmake |
+                sed -n 's/.*set(CME_PINNED_URL *"\([^"]*\)").*/\1/p')
+          sha=$(sed -n 's/^set(CME_PINNED_SHA256 "\(.*\)")$/\1/p' cmake/get_cme.cmake)
+          curl -sSL -o /tmp/cme.tar.gz "$url"
+          echo "$sha  /tmp/cme.tar.gz" | sha256sum -c -
           mkdir -p /tmp/cme && tar xzf /tmp/cme.tar.gz -C /tmp/cme --strip-components=1
           mkdir -p /tmp/consumer-cme
           cp /tmp/consumer/main.cc /tmp/consumer-cme/main.cc
