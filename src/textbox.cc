@@ -7,9 +7,6 @@ import skiff.scene;
 export import skiff.widgets.theme;
 
 namespace skiff::widgets {
-using skiff::scene::Anchor;
-using skiff::scene::Axes;
-using skiff::scene::Easing;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -24,7 +21,7 @@ class TextBox : public skiff::scene::Node {
 public:
   explicit TextBox(std::string placeholder = {}, OnChanged onChanged = {})
       : fPlaceholder(std::move(placeholder)), fOnChanged(std::move(onChanged)) {
-    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     fState.fHeight = fTheme.fRowHeight;
   }
@@ -93,33 +90,33 @@ public:
     return fState.fBounds.contains(x, y);
   }
 
-  void onTextInput(skiff::scene::TextInputEvent &event) {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget) {
-      return;
+  using Node::onText;
+  void onText(skiff::scene::phase::target, const skiff::scene::text::commit &typed,
+              skiff::scene::Reply &reply) {
+    if (!typed.text.empty()) {
+      fText.insert(fCaret, typed.text);
+      fCaret += typed.text.size();
+      std::invoke(fOnChanged, std::string_view(fText));
     }
-    if (event.fCommit) {
-      if (!event.fText.empty()) {
-        fText.insert(fCaret, event.fText);
-        fCaret += event.fText.size();
-        std::invoke(fOnChanged, std::string_view(fText));
-      }
-      fComposition.clear();
-    } else {
-      fComposition = event.fComposition.empty() ? std::string(event.fText)
-                                                : std::string(event.fComposition);
-      fCompositionSelectionStart = event.fSelectionStart;
-      fCompositionSelectionLength = event.fSelectionLength;
-    }
+    fComposition.clear();
     this->markDamaged();
-    event.handle();
+    reply.handle();
+  }
+  void onText(skiff::scene::phase::target,
+              const skiff::scene::text::compose &composing,
+              skiff::scene::Reply &reply) {
+    fComposition = std::string(composing.text);
+    fCompositionSelectionStart = composing.start;
+    fCompositionSelectionLength = composing.length;
+    this->markDamaged();
+    reply.handle();
   }
 
-  void onKeyEvent(skiff::scene::KeyEvent &event) {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget ||
-        !event.fPressed) {
-      return;
-    }
-    if (event.fKey == skiff::scene::Key::kBackspace) {
+  using Node::onKey;
+  void onKey(skiff::scene::phase::target, const skiff::scene::key::down &press,
+             skiff::scene::Reply &reply) {
+    namespace keys = skiff::scene::keys;
+    if (press.key == keys::kBackspace) {
       if (fCaret > 0) {
         const std::size_t eraseFrom = previousCodepoint(fText, fCaret);
         fText.erase(eraseFrom, fCaret - eraseFrom);
@@ -127,61 +124,59 @@ public:
         std::invoke(fOnChanged, std::string_view(fText));
         this->markDamaged();
       }
-      event.handle();
-    } else if (event.fKey == skiff::scene::Key::kDelete) {
+      reply.handle();
+    } else if (press.key == keys::kDelete) {
       if (fCaret < fText.size()) {
         const std::size_t eraseTo = nextCodepoint(fText, fCaret);
         fText.erase(fCaret, eraseTo - fCaret);
         std::invoke(fOnChanged, std::string_view(fText));
         this->markDamaged();
       }
-      event.handle();
-    } else if (event.fKey == skiff::scene::Key::kLeft) {
+      reply.handle();
+    } else if (press.key == keys::kLeft) {
       fCaret = previousCodepoint(fText, fCaret);
       this->markDamaged();
-      event.handle();
-    } else if (event.fKey == skiff::scene::Key::kRight) {
+      reply.handle();
+    } else if (press.key == keys::kRight) {
       fCaret = nextCodepoint(fText, fCaret);
       this->markDamaged();
-      event.handle();
-    } else if (event.fKey == skiff::scene::Key::kHome) {
+      reply.handle();
+    } else if (press.key == keys::kHome) {
       fCaret = 0;
       this->markDamaged();
-      event.handle();
-    } else if (event.fKey == skiff::scene::Key::kEnd) {
+      reply.handle();
+    } else if (press.key == keys::kEnd) {
       fCaret = fText.size();
       this->markDamaged();
-      event.handle();
-    } else if (event.fKey == skiff::scene::Key::kEscape &&
-               !fComposition.empty()) {
+      reply.handle();
+    } else if (press.key == keys::kEscape && !fComposition.empty()) {
       fComposition.clear();
       this->markDamaged();
-      event.handle();
+      reply.handle();
     }
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kTextBox;
+    out.fRole = skiff::scene::semantic_role::text_box{};
     out.fLabel = fPlaceholder;
     if (!fMasked) {
       out.fValue = fText;
     }
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kSetValue};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::set_value{}};
     return out;
   }
 
-  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
-    if (event.fAction == skiff::scene::SemanticAction::kSetValue) {
-      if (event.fText != fText) {
-        this->setText(std::string(event.fText));
-        std::invoke(fOnChanged, std::string_view(fText));
-      }
-      event.handle();
-    } else {
-      skiff::scene::defaultSemanticAction(*this, event);
+  using Node::onSemantic;
+  void onSemantic(skiff::scene::phase::target,
+                  const skiff::scene::semantic_action::set_value &set,
+                  skiff::scene::Reply &reply) {
+    if (set.text != fText) {
+      this->setText(std::string(set.text));
+      std::invoke(fOnChanged, std::string_view(fText));
     }
+    reply.handle();
   }
 
   void drawSelf(skia::SkCanvas *canvas, float alpha) {

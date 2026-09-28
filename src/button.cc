@@ -7,9 +7,6 @@ import skiff.scene;
 export import skiff.widgets.theme;
 
 namespace skiff::widgets {
-using skiff::scene::Anchor;
-using skiff::scene::Axes;
-using skiff::scene::Easing;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -83,11 +80,11 @@ public:
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kButton;
+    out.fRole = skiff::scene::semantic_role::button{};
     out.fLabel = fLabel;
     out.fDisabled = !fEnabled;
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kActivate};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::activate{}};
     return out;
   }
 

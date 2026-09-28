@@ -34,7 +34,7 @@ TEST(RangeSlider, OwnsHandleSelectionDragAndMinimumSpan) {
                        .y = 13.0f,
                        .width = 100.0f,
                        .height = 14.0f,
-                       .relativeSize = scene::Axes::kNone},
+                       .relativeSize = scene::axes::kNone},
                       widgets::RangeSlider([&changes](float, float) { ++changes; }));
   auto &s = *made;
   auto &slider = s.root().child;
@@ -99,17 +99,12 @@ TEST(Dropdown, ButtonAndRowsRouteTheirOwnClicks) {
   EXPECT_TRUE(list.expanded());
   EXPECT_TRUE(s.click(20.0f, 15.0f));
   EXPECT_EQ(opened, 1);
-  scene::PointerEvent down;
-  down.fAction = scene::PointerAction::kDown;
-  down.fX = 20.0f;
-  down.fY = 64.0f;
+  scene::PointerEvent down = scene::pointer::down{20.0f, 64.0f};
   EXPECT_TRUE(s.dispatchPointer(down));
   EXPECT_EQ(chosen, 1);
   EXPECT_FALSE(list.expanded());
   EXPECT_NE(s.capturedId(), 0u);
-  scene::PointerEvent up = down;
-  up.fAction = scene::PointerAction::kUp;
-  EXPECT_TRUE(s.dispatchPointer(up));
+  EXPECT_TRUE(s.dispatchPointer(scene::pointer::up{20.0f, 64.0f}));
   EXPECT_EQ(chosen, 1);
   EXPECT_EQ(s.capturedId(), 0u);
 
@@ -219,7 +214,7 @@ TEST(RangeSlider, RoutedDragKeepsCaptureOutsideItsBounds) {
                        .y = 13.0f,
                        .width = 100.0f,
                        .height = 14.0f,
-                       .relativeSize = scene::Axes::kNone},
+                       .relativeSize = scene::axes::kNone},
                       widgets::RangeSlider([](float, float) {}));
   auto &s = *made;
   auto &slider = s.root().child;
@@ -227,25 +222,16 @@ TEST(RangeSlider, RoutedDragKeepsCaptureOutsideItsBounds) {
   s.state().apply({.fill = true});
   s.layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 40.0f));
 
-  scene::PointerEvent down;
-  down.fAction = scene::PointerAction::kDown;
-  down.fX = 60.0f;
-  down.fY = 20.0f;
+  scene::PointerEvent down = scene::pointer::down{60.0f, 20.0f};
   EXPECT_TRUE(s.dispatchPointer(down));
   EXPECT_EQ(s.capturedId(), slider.id());
   EXPECT_FLOAT_EQ(slider.low(), 0.5f);
 
-  scene::PointerEvent move;
-  move.fAction = scene::PointerAction::kMove;
-  move.fX = 200.0f;
-  move.fY = 100.0f;
+  scene::PointerEvent move = scene::pointer::move{200.0f, 100.0f};
   EXPECT_TRUE(s.dispatchPointer(move));
   EXPECT_NEAR(slider.low(), 0.9f, 0.0001f);
 
-  scene::PointerEvent up;
-  up.fAction = scene::PointerAction::kUp;
-  up.fX = 200.0f;
-  up.fY = 100.0f;
+  scene::PointerEvent up = scene::pointer::up{200.0f, 100.0f};
   EXPECT_TRUE(s.dispatchPointer(up));
   EXPECT_EQ(s.capturedId(), 0u);
   EXPECT_FALSE(slider.dragging());
@@ -260,15 +246,11 @@ TEST(Button, TabFocusAndEnterActivate) {
   s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
   (void)s.finishFrame();
 
-  scene::KeyEvent tab;
-  tab.fKey = scene::Key::kTab;
-  EXPECT_TRUE(s.dispatchKey(tab));
+  EXPECT_TRUE(s.dispatchKey(scene::key::down{scene::keys::kTab}));
   EXPECT_EQ(s.focusedId(), s.root().child.id());
   EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
 
-  scene::KeyEvent enter;
-  enter.fKey = scene::Key::kEnter;
-  EXPECT_TRUE(s.dispatchKey(enter));
+  EXPECT_TRUE(s.dispatchKey(scene::key::down{scene::keys::kEnter}));
   EXPECT_EQ(clicks, 1);
 }
 
@@ -283,33 +265,23 @@ TEST(TextBox, RoutedUtf8AndCompositionUseFocus) {
   s.state().apply({.fill = true});
   s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
 
-  scene::PointerEvent down;
-  down.fAction = scene::PointerAction::kDown;
-  down.fX = 10.0f;
-  down.fY = 10.0f;
+  scene::PointerEvent down = scene::pointer::down{10.0f, 10.0f};
   EXPECT_TRUE(s.dispatchPointer(down));
   EXPECT_EQ(s.focusedId(), box.id());
 
-  scene::TextInputEvent composing;
-  composing.fComposition = "ka";
-  composing.fCommit = false;
-  EXPECT_TRUE(s.dispatchText(composing));
+  EXPECT_TRUE(s.dispatchText(scene::text::compose{"ka"}));
   EXPECT_TRUE(box.text().empty());
 
-  scene::TextInputEvent commit;
-  commit.fText = "か";
-  EXPECT_TRUE(s.dispatchText(commit));
+  EXPECT_TRUE(s.dispatchText(scene::text::commit{"か"}));
   EXPECT_EQ(box.text(), "か");
   EXPECT_EQ(changed, "か");
 
-  scene::KeyEvent backspace;
-  backspace.fKey = scene::Key::kBackspace;
-  EXPECT_TRUE(s.dispatchKey(backspace));
+  EXPECT_TRUE(s.dispatchKey(scene::key::down{scene::keys::kBackspace}));
   EXPECT_TRUE(box.text().empty());
 
   const auto semantics = s.semanticsTree();
   ASSERT_EQ(semantics.size(), 1u);
-  EXPECT_EQ(semantics[0].fRole, scene::SemanticRole::kTextBox);
+  EXPECT_TRUE(scene::isTextBox(semantics[0].fRole));
   EXPECT_TRUE(semantics[0].fFocused);
 }
 
@@ -348,21 +320,13 @@ TEST(Accessibility, SemanticActionsOperateWidgets) {
 
   const auto tree = s.semanticsTree();
   ASSERT_EQ(tree.size(), 3u);
-  scene::SemanticActionEvent activate;
-  activate.fAction = scene::SemanticAction::kActivate;
-  EXPECT_TRUE(s.dispatchSemantic(tree[0].fId, activate));
+  EXPECT_TRUE(s.dispatchSemantic(tree[0].fId, scene::semantic_action::activate{}));
   EXPECT_EQ(clicks, 1);
 
-  scene::SemanticActionEvent setSlider;
-  setSlider.fAction = scene::SemanticAction::kSetValue;
-  setSlider.fValue = 0.75f;
-  EXPECT_TRUE(s.dispatchSemantic(tree[1].fId, setSlider));
+  EXPECT_TRUE(s.dispatchSemantic(tree[1].fId, scene::semantic_action::set_value{0.75f}));
   EXPECT_FLOAT_EQ(sliderValue, 0.75f);
 
-  scene::SemanticActionEvent setText;
-  setText.fAction = scene::SemanticAction::kSetValue;
-  setText.fText = "artist";
-  EXPECT_TRUE(s.dispatchSemantic(tree[2].fId, setText));
+  EXPECT_TRUE(s.dispatchSemantic(tree[2].fId, scene::semantic_action::set_value{0.0f, "artist"}));
   EXPECT_EQ(s.root().box.text(), "artist");
 }
 

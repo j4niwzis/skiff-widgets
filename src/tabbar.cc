@@ -7,9 +7,6 @@ import skiff.scene;
 export import skiff.widgets.theme;
 
 namespace skiff::widgets {
-using skiff::scene::Anchor;
-using skiff::scene::Axes;
-using skiff::scene::Easing;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -40,7 +37,7 @@ public:
                   Decorate decorate = {})
       : fOnSelect(std::move(onSelect)), fIsActive(std::move(isActive)),
         fDecorate(std::move(decorate)) {
-    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
   }
 
@@ -188,9 +185,11 @@ public:
   [[nodiscard]] bool acceptsInput() const { return true; }
   [[nodiscard]] bool focusChangesAppearance() const { return true; }
 
-  void onKeyEvent(skiff::scene::KeyEvent &event) {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget ||
-        !event.fPressed || fTabs.empty()) {
+  using Node::onKey;
+  void onKey(skiff::scene::phase::target, const skiff::scene::key::down &press,
+             skiff::scene::Reply &reply) {
+    namespace keys = skiff::scene::keys;
+    if (fTabs.empty()) {
       return;
     }
     const auto selected = std::ranges::find_if(
@@ -198,53 +197,47 @@ public:
     std::size_t index = selected == fTabs.end()
                             ? 0
                             : static_cast<std::size_t>(selected - fTabs.begin());
-    if (event.fKey == skiff::scene::Key::kLeft ||
-        event.fKey == skiff::scene::Key::kUp) {
+    if (press.key == keys::kLeft || press.key == keys::kUp) {
       index = (index + fTabs.size() - 1) % fTabs.size();
-    } else if (event.fKey == skiff::scene::Key::kRight ||
-               event.fKey == skiff::scene::Key::kDown) {
+    } else if (press.key == keys::kRight || press.key == keys::kDown) {
       index = (index + 1) % fTabs.size();
-    } else if (event.fKey == skiff::scene::Key::kHome) {
+    } else if (press.key == keys::kHome) {
       index = 0;
-    } else if (event.fKey == skiff::scene::Key::kEnd) {
+    } else if (press.key == keys::kEnd) {
       index = fTabs.size() - 1;
     } else {
-      skiff::scene::defaultKeyEvent(*this, event);
+      skiff::scene::defaultKey(*this, skiff::scene::phase::target{}, press, reply);
       return;
     }
     std::invoke(fOnSelect, fTabs[index].fValue);
-    event.handle();
+    reply.handle();
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kTab;
+    out.fRole = skiff::scene::semantic_role::tab{};
     out.fLabel = fHeader;
     const auto selected = std::ranges::find_if(
         fTabs, [this](const Tab &tab) { return tab.fValue == fSelected; });
     if (selected != fTabs.end()) {
       out.fValue = selected->fLabel;
     }
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kIncrement,
-                    skiff::scene::SemanticAction::kDecrement};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::increment{},
+                    skiff::scene::semantic_action::decrement{}};
     return out;
   }
 
-  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
-    if (event.fAction == skiff::scene::SemanticAction::kIncrement ||
-        event.fAction == skiff::scene::SemanticAction::kDecrement) {
-      skiff::scene::KeyEvent key;
-      key.fKey = event.fAction == skiff::scene::SemanticAction::kIncrement
-                     ? skiff::scene::Key::kRight
-                     : skiff::scene::Key::kLeft;
-      this->onKeyEvent(key);
-      if (key.fHandled) {
-        event.handle();
-      }
-    } else {
-      skiff::scene::defaultSemanticAction(*this, event);
-    }
+  using Node::onSemantic;
+  void onSemantic(skiff::scene::phase::target at,
+                  const skiff::scene::semantic_action::increment &,
+                  skiff::scene::Reply &reply) {
+    this->onKey(at, skiff::scene::key::down{skiff::scene::keys::kRight}, reply);
+  }
+  void onSemantic(skiff::scene::phase::target at,
+                  const skiff::scene::semantic_action::decrement &,
+                  skiff::scene::Reply &reply) {
+    this->onKey(at, skiff::scene::key::down{skiff::scene::keys::kLeft}, reply);
   }
 
   [[nodiscard]] bool onClick(float x, float y) {
@@ -257,11 +250,17 @@ public:
   }
 
   [[nodiscard]] bool activeTab(const Tab &tab) const {
-    if constexpr (skiff::scene::kActs<IsActive>) {
-      return std::invoke(fIsActive, tab.fValue);
-    } else {
-      return tab.fValue == fSelected;
-    }
+    return this->answer(fIsActive, tab.fValue);
+  }
+
+  // Which tabs read as selected: the one whose value is selected(), unless
+  // the bar was given its own answer.
+  [[nodiscard]] bool answer(const skiff::scene::NoAction &, int value) const {
+    return value == fSelected;
+  }
+  template <class Answer>
+  [[nodiscard]] bool answer(const Answer &given, int value) const {
+    return std::invoke(given, value);
   }
 
   [[nodiscard]] int tabAt(float x, float y) const {

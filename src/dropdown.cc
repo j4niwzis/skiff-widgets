@@ -8,8 +8,6 @@ import skiff.nodes;
 export import skiff.widgets.theme;
 
 namespace skiff::widgets {
-using skiff::scene::Anchor;
-using skiff::scene::Axes;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -108,28 +106,28 @@ public:
   }
 
   [[nodiscard]] bool acceptsInput() const {
-    return skiff::scene::kActs<OnOpen>;
+    return skiff::scene::acts(fOnOpen);
   }
   [[nodiscard]] bool hoverChangesAppearance() const {
-    return skiff::scene::kActs<OnOpen> && !fOpen;
+    return skiff::scene::acts(fOnOpen) && !fOpen;
   }
   [[nodiscard]] bool focusChangesAppearance() const {
-    return skiff::scene::kActs<OnOpen> && !fOpen;
+    return skiff::scene::acts(fOnOpen) && !fOpen;
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kButton;
+    out.fRole = skiff::scene::semantic_role::button{};
     out.fLabel = fLabel;
     out.fValue = fValue;
     out.fHint = fOpen ? "expanded" : "collapsed";
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kActivate};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::activate{}};
     return out;
   }
 
   [[nodiscard]] bool onClick(float, float) {
-    if (!skiff::scene::kActs<OnOpen>) {
+    if (!skiff::scene::acts(fOnOpen)) {
       return false;
     }
     std::invoke(fOnOpen);
@@ -165,7 +163,7 @@ class DropdownRow : public skiff::scene::Node {
 public:
   DropdownRow(std::string label, const DropdownLook &look)
       : fLabel(std::move(label)), fLook(look) {
-    fState.fRelativeSizeAxes = skiff::scene::Axes::kX;
+    fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     fState.fHeight = look.fRowHeight;
   }
@@ -207,29 +205,30 @@ public:
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kListItem;
+    out.fRole = skiff::scene::semantic_role::list_item{};
     out.fLabel = fLabel;
     out.fSelected = fChosen;
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kActivate};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::activate{}};
     return out;
   }
 
-  // The press is held: the list closes on it, and the release must not
-  // fall through to what was under the list.
-  void onPointerEvent(skiff::scene::PointerEvent &event) {
-    using skiff::scene::EventPhase;
-    using skiff::scene::PointerAction;
-    if (event.fPhase != EventPhase::kTarget) {
-      return;
-    }
-    if (event.fAction == PointerAction::kDown) {
-      event.capturePointer();
-    } else if (event.fAction == PointerAction::kUp ||
-               event.fAction == PointerAction::kCancel) {
-      event.releasePointer();
-      event.handle();
-    }
+  // The press is held: the list closes on it, and the release must not fall
+  // through to what was under the list.
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &,
+                 skiff::scene::PointerReply &reply) {
+    reply.capturePointer();
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &,
+                 skiff::scene::PointerReply &reply) {
+    reply.releasePointer();
+    reply.handle();
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
+                 skiff::scene::PointerReply &reply) {
+    reply.releasePointer();
+    reply.handle();
   }
 
 private:
@@ -246,7 +245,7 @@ class DropdownList : public skiff::scene::Node {
 public:
   explicit DropdownList(OnChoose onChoose = {})
       : fOnChoose(std::move(onChoose)) {
-    fState.fAutoSizeAxes = skiff::scene::Axes::kY;
+    fState.fAutoSizeAxes = skiff::scene::axes::kY;
     // Two above the first row, four below the last, which is where the plate
     // ends.
     fState.fPadding = {kTopInset, 0.0f, kBottomInset, 0.0f};
@@ -337,50 +336,47 @@ public:
   [[nodiscard]] bool acceptsInput() const { return fState.fVisible; }
   [[nodiscard]] bool focusable() const { return false; }
 
-  void onPointerEvent(skiff::scene::PointerEvent &event) {
-    using skiff::scene::EventPhase;
-    using skiff::scene::PointerAction;
-    if (event.fPhase == EventPhase::kCapture) {
-      return;
-    }
-    if (event.fPhase == EventPhase::kBubble) {
-      // A row's press. Choosing on press is the widget's contract: screens
-      // read their action as soon as the press is dispatched.
-      if (event.fAction == PointerAction::kDown) {
-        if (const int index = this->rowOf(event.fTarget); index >= 0) {
-          std::invoke(fOnChoose, index);
-          event.handle();
-        }
-      }
-      return;
-    }
-    // The list itself: the padding and the gaps. Held, so that a release
-    // after the owner closed the list still belongs here.
-    if (event.fAction == PointerAction::kDown) {
-      event.capturePointer();
-      event.handle();
-    } else if (event.fAction == PointerAction::kUp ||
-               event.fAction == PointerAction::kCancel) {
-      event.releasePointer();
-      event.handle();
+  using Node::onPointer;
+  // A row's press. Choosing on press is the widget's contract: screens read
+  // their action as soon as the press is dispatched.
+  void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
+                 skiff::scene::PointerReply &reply) {
+    if (const int index = this->rowOf(reply.fTarget); index >= 0) {
+      std::invoke(fOnChoose, index);
+      reply.handle();
     }
   }
+  // The list itself -- the padding and the gaps -- is held, so that a
+  // release after the owner closed the list still belongs here.
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &,
+                 skiff::scene::PointerReply &reply) {
+    reply.capturePointer();
+    reply.handle();
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &,
+                 skiff::scene::PointerReply &reply) {
+    reply.releasePointer();
+    reply.handle();
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
+                 skiff::scene::PointerReply &reply) {
+    reply.releasePointer();
+    reply.handle();
+  }
 
-  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
-    if (event.fPhase == skiff::scene::EventPhase::kBubble &&
-        event.fAction == skiff::scene::SemanticAction::kActivate) {
-      if (const int index = this->rowOf(event.fTarget); index >= 0) {
-        std::invoke(fOnChoose, index);
-        event.handle();
-      }
-      return;
+  using Node::onSemantic;
+  void onSemantic(skiff::scene::phase::bubble,
+                  const skiff::scene::semantic_action::activate &,
+                  skiff::scene::Reply &reply) {
+    if (const int index = this->rowOf(reply.fTarget); index >= 0) {
+      std::invoke(fOnChoose, index);
+      reply.handle();
     }
-    skiff::scene::defaultSemanticAction(*this, event);
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kList;
+    out.fRole = skiff::scene::semantic_role::list{};
     return out;
   }
 

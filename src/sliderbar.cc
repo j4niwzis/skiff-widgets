@@ -7,8 +7,6 @@ import skiff.scene;
 export import skiff.widgets.theme;
 
 namespace skiff::widgets {
-using skiff::scene::Anchor;
-using skiff::scene::Axes;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -26,7 +24,7 @@ template <class OnSet = skiff::scene::NoAction>
 class SliderBar : public skiff::scene::Node {
 public:
   explicit SliderBar(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
-    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     fState.fHeight = 6.0f;
   }
@@ -88,68 +86,82 @@ public:
 
   // Without a setter it is a picture of a value and clicks fall through to
   // whatever is behind it.
-  [[nodiscard]] bool acceptsInput() const { return skiff::scene::kActs<OnSet>; }
+  [[nodiscard]] bool acceptsInput() const { return skiff::scene::acts(fOnSet); }
   [[nodiscard]] bool focusChangesAppearance() const {
-    return skiff::scene::kActs<OnSet>;
+    return skiff::scene::acts(fOnSet);
   }
 
-  void onPointerEvent(skiff::scene::PointerEvent &event) {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget || !skiff::scene::kActs<OnSet>) {
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &press,
+                 skiff::scene::PointerReply &reply) {
+    if (!skiff::scene::acts(fOnSet) || !this->reach().contains(press.x, press.y)) {
       return;
     }
-    if (event.fAction == skiff::scene::PointerAction::kDown &&
-        this->reach().contains(event.fX, event.fY)) {
-      fDragging = true;
-      std::invoke(fOnSet, this->fractionAt(event.fX));
-      event.capturePointer();
-      event.requestFocus();
-      event.handle();
-    } else if (event.fAction == skiff::scene::PointerAction::kMove &&
-               fDragging) {
-      std::invoke(fOnSet, this->fractionAt(event.fX));
-      event.handle();
-    } else if ((event.fAction == skiff::scene::PointerAction::kUp ||
-                event.fAction == skiff::scene::PointerAction::kCancel) &&
-               fDragging) {
+    fDragging = true;
+    std::invoke(fOnSet, this->fractionAt(press.x));
+    reply.capturePointer();
+    reply.requestFocus();
+    reply.handle();
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::move &move,
+                 skiff::scene::PointerReply &reply) {
+    if (fDragging) {
+      std::invoke(fOnSet, this->fractionAt(move.x));
+      reply.handle();
+    }
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &,
+                 skiff::scene::PointerReply &reply) {
+    this->stopDragging(reply);
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
+                 skiff::scene::PointerReply &reply) {
+    this->stopDragging(reply);
+  }
+  void stopDragging(skiff::scene::PointerReply &reply) {
+    if (fDragging) {
       fDragging = false;
-      event.releasePointer();
-      event.handle();
+      reply.releasePointer();
+      reply.handle();
     }
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kSlider;
+    out.fRole = skiff::scene::semantic_role::slider{};
     out.fValue = std::format("{:.3f}", fFraction);
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kIncrement,
-                    skiff::scene::SemanticAction::kDecrement,
-                    skiff::scene::SemanticAction::kSetValue};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::increment{},
+                    skiff::scene::semantic_action::decrement{},
+                    skiff::scene::semantic_action::set_value{}};
     return out;
   }
 
-  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
-    if (event.fAction == skiff::scene::SemanticAction::kIncrement && skiff::scene::kActs<OnSet>) {
-      std::invoke(fOnSet, std::min(1.0f, fFraction + 0.05f));
-      event.handle();
-    } else if (event.fAction == skiff::scene::SemanticAction::kDecrement &&
-               skiff::scene::kActs<OnSet>) {
-      std::invoke(fOnSet, std::max(0.0f, fFraction - 0.05f));
-      event.handle();
-    } else if (event.fAction == skiff::scene::SemanticAction::kSetValue &&
-               skiff::scene::kActs<OnSet>) {
-      std::invoke(fOnSet, std::clamp(event.fValue, 0.0f, 1.0f));
-      event.handle();
-    } else {
-      skiff::scene::defaultSemanticAction(*this, event);
+  using Node::onSemantic;
+  void onSemantic(skiff::scene::phase::target, const skiff::scene::semantic_action::increment &,
+                  skiff::scene::Reply &reply) {
+    this->setBy(std::min(1.0f, fFraction + 0.05f), reply);
+  }
+  void onSemantic(skiff::scene::phase::target, const skiff::scene::semantic_action::decrement &,
+                  skiff::scene::Reply &reply) {
+    this->setBy(std::max(0.0f, fFraction - 0.05f), reply);
+  }
+  void onSemantic(skiff::scene::phase::target, const skiff::scene::semantic_action::set_value &set,
+                  skiff::scene::Reply &reply) {
+    this->setBy(std::clamp(set.value, 0.0f, 1.0f), reply);
+  }
+  void setBy(float fraction, skiff::scene::Reply &reply) {
+    if (skiff::scene::acts(fOnSet)) {
+      std::invoke(fOnSet, fraction);
+      reply.handle();
     }
   }
 
   [[nodiscard]] bool onClick(float x, float y) {
-    if (!skiff::scene::kActs<OnSet> || !this->reach().contains(x, y)) {
+    if (!skiff::scene::acts(fOnSet) || !this->reach().contains(x, y)) {
       return false;
     }
-    if (skiff::scene::kActs<OnSet>) {
+    if (skiff::scene::acts(fOnSet)) {
       std::invoke(fOnSet, this->fractionAt(x));
     }
     return true;
@@ -170,7 +182,7 @@ template <class OnSet = skiff::scene::NoAction>
 class RangeSlider : public skiff::scene::Node {
 public:
   explicit RangeSlider(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
-    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     // The track is six pixels high, but a seven-pixel-radius knob is the
     // actual interaction target. Scene hit testing uses the drawable bounds,
@@ -268,44 +280,55 @@ public:
     }
   }
 
-  [[nodiscard]] bool acceptsInput() const { return skiff::scene::kActs<OnSet>; }
+  [[nodiscard]] bool acceptsInput() const { return skiff::scene::acts(fOnSet); }
   [[nodiscard]] bool focusChangesAppearance() const {
-    return skiff::scene::kActs<OnSet>;
+    return skiff::scene::acts(fOnSet);
   }
 
-  void onPointerEvent(skiff::scene::PointerEvent &event) {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget || !skiff::scene::kActs<OnSet>) {
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &press,
+                 skiff::scene::PointerReply &reply) {
+    if (!skiff::scene::acts(fOnSet) || !fState.fBounds.contains(press.x, press.y)) {
       return;
     }
-    if (event.fAction == skiff::scene::PointerAction::kDown &&
-        fState.fBounds.contains(event.fX, event.fY)) {
-      this->onClick(event.fX, event.fY);
-      event.capturePointer();
-      event.requestFocus();
-      event.handle();
-    } else if (event.fAction == skiff::scene::PointerAction::kMove &&
-               this->dragging()) {
-      this->dragTo(event.fX);
-      event.handle();
-    } else if ((event.fAction == skiff::scene::PointerAction::kUp ||
-                event.fAction == skiff::scene::PointerAction::kCancel) &&
-               this->dragging()) {
+    (void)this->onClick(press.x, press.y);
+    reply.capturePointer();
+    reply.requestFocus();
+    reply.handle();
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::move &move,
+                 skiff::scene::PointerReply &reply) {
+    if (this->dragging()) {
+      this->dragTo(move.x);
+      reply.handle();
+    }
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &,
+                 skiff::scene::PointerReply &reply) {
+    this->stopDragging(reply);
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
+                 skiff::scene::PointerReply &reply) {
+    this->stopDragging(reply);
+  }
+  void stopDragging(skiff::scene::PointerReply &reply) {
+    if (this->dragging()) {
       this->endDrag();
-      event.releasePointer();
-      event.handle();
+      reply.releasePointer();
+      reply.handle();
     }
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kSlider;
+    out.fRole = skiff::scene::semantic_role::slider{};
     out.fValue = std::format("{:.3f}–{:.3f}", fLow, fHigh);
-    out.fActions = {skiff::scene::SemanticAction::kFocus};
+    out.fActions = {skiff::scene::semantic_action::focus{}};
     return out;
   }
 
   [[nodiscard]] bool onClick(float x, float) {
-    if (!skiff::scene::kActs<OnSet>) {
+    if (!skiff::scene::acts(fOnSet)) {
       return false;
     }
     const float at = this->fractionAt(x);
@@ -324,7 +347,7 @@ private:
     fLow = low;
     fHigh = high;
     this->markDamaged();
-    if (skiff::scene::kActs<OnSet>) {
+    if (skiff::scene::acts(fOnSet)) {
       std::invoke(fOnSet, fLow, fHigh);
     }
   }
@@ -397,22 +420,22 @@ public:
     }
   }
 
-  [[nodiscard]] bool acceptsInput() const { return skiff::scene::kActs<OnToggle>; }
+  [[nodiscard]] bool acceptsInput() const { return skiff::scene::acts(fOnToggle); }
   [[nodiscard]] bool focusChangesAppearance() const {
-    return skiff::scene::kActs<OnToggle>;
+    return skiff::scene::acts(fOnToggle);
   }
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::SemanticRole::kToggle;
+    out.fRole = skiff::scene::semantic_role::toggle{};
     out.fValue = fOn ? "on" : "off";
-    out.fActions = {skiff::scene::SemanticAction::kFocus,
-                    skiff::scene::SemanticAction::kActivate};
+    out.fActions = {skiff::scene::semantic_action::focus{},
+                    skiff::scene::semantic_action::activate{}};
     return out;
   }
 
   [[nodiscard]] bool onClick(float, float) {
-    if (!skiff::scene::kActs<OnToggle>) {
+    if (!skiff::scene::acts(fOnToggle)) {
       return false;
     }
     std::invoke(fOnToggle);
