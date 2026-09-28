@@ -69,7 +69,7 @@ public:
     const skia::SkRect &bounds = fState.fBounds;
     const skiff::paint::Painter p(canvas, *font);
     p.fillRounded(bounds, fTheme.fCorner,
-                  fState.fHovered || this->focused() || fOpen
+                  fState.fHovered || this->showsFocus() || fOpen
                       ? fTheme.fSurfaceHover
                       : fTheme.fSurface,
                   alpha);
@@ -189,7 +189,7 @@ public:
     const Theme &theme = fLook.fTheme;
     const skia::SkRect &bounds = fState.fBounds;
     const skiff::paint::Painter p(canvas, *font);
-    if (fChosen || fState.fHovered || this->focused()) {
+    if (fChosen || fState.fHovered || this->showsFocus()) {
       p.fillRounded(bounds, fLook.fRowRadius,
                     fChosen ? theme.fAccent : theme.fSurfaceHover, alpha);
     }

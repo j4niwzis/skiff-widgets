@@ -78,7 +78,7 @@ public:
                   fTrackRadius, fTheme.fAccent, alpha);
     p.circle(fState.fBounds.fLeft + fState.fBounds.width() * fFraction, fState.fBounds.centerY(),
              fKnobRadius, fTheme.fText, alpha);
-    if (this->focused()) {
+    if (this->showsFocus()) {
       p.strokeRounded(this->reach(), fKnobRadius, fTheme.fAccent, 1.5f,
                       alpha);
     }
@@ -275,7 +275,7 @@ public:
              fKnobRadius, fTheme.fText, alpha);
     p.circle(track.fLeft + track.width() * fHigh, track.centerY(),
              fKnobRadius, fTheme.fText, alpha);
-    if (this->focused()) {
+    if (this->showsFocus()) {
       p.strokeRounded(fState.fBounds, fKnobRadius, fTheme.fAccent, 1.5f, alpha);
     }
   }
@@ -421,7 +421,7 @@ public:
     p.circle(fState.fBounds.fLeft + fKnobInset +
                  (fState.fBounds.width() - fKnobInset * 2.0f) * fKnob,
              fState.fBounds.centerY(), fKnobRadius, fTheme.fText, alpha);
-    if (this->focused()) {
+    if (this->showsFocus()) {
       p.strokeRounded(fState.fBounds, fState.fBounds.height() * 0.5f, fTheme.fAccent, 1.5f,
                       alpha);
     }

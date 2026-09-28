@@ -102,7 +102,7 @@ public:
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    const bool hot = (fState.fHovered || this->focused()) && fEnabled;
+    const bool hot = (fState.fHovered || this->showsFocus()) && fEnabled;
     skia::SkColor fill = fPrimary ? fTheme.fAccent : fTheme.fSurface;
     if (hot) {
       fill =

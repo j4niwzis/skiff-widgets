@@ -177,7 +177,7 @@ public:
         std::invoke(fDecorate, canvas, box, alpha);
       }
     }
-    if (this->focused()) {
+    if (this->showsFocus()) {
       p.strokeRounded(fState.fBounds, 3.0f, fTheme.fAccent, 1.0f, alpha);
     }
   }
