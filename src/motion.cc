@@ -192,7 +192,7 @@ private:
   Base fBase;
   skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
   std::optional<Over> fOver;
-  skiff::paint::Eased fSlide{0.0f, 60.0f, skiff::paint::movement::sweeping{}};
+  skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
   bool fClosing = false;
 };
 
@@ -262,7 +262,7 @@ public:
       return;
     }
     const float value = fSlide.value();
-    fScrim.setColour(skia::colorSetARGB(static_cast<unsigned>(110.0f * value), 0, 0, 0));
+    fScrim.setColour(skia::colorSetARGB(static_cast<unsigned>(115.0f * value), 0, 0, 0));
     fScrim.apply({.width = box.width(), .height = box.height()});
     fScrim.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fScrim, box);
@@ -316,7 +316,7 @@ private:
   Scrim fScrim;
   skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
   Content fContent;
-  skiff::paint::Eased fSlide{0.0f, 60.0f, skiff::paint::movement::sweeping{}};
+  skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
   float fWidth = 300.0f;
   bool fOpen = false;
 };
