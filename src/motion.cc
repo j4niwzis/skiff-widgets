@@ -285,6 +285,14 @@ public:
 
   void open() { this->setOpen(true); }
   void close() { this->setOpen(false); }
+  // Pushed in there and then, with no slide: for when something has just
+  // come over it and it goes unseen.
+  void closeNow() {
+    fOpen = false;
+    fSlide.jump(0.0f);
+    this->showWhatMoves();
+    this->invalidateLayout();
+  }
   void setOpen(bool open) {
     fOpen = open;
     fSlide.setTarget(open ? 1.0f : 0.0f);
