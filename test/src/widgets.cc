@@ -14,264 +14,356 @@ namespace {
 namespace scene = skiff::scene;
 namespace widgets = skiff::widgets;
 
-TEST(RangeSlider, OwnsHandleSelectionDragAndMinimumSpan) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
-  auto *slider = root->add<widgets::RangeSlider>(
-      {.x = 10.0f,
-       .y = 13.0f,
-       .width = 100.0f,
-       .height = 14.0f,
-       .relativeSize = scene::Axes::kNone});
-  slider->setMinimumSpan(0.1f);
-  int changes = 0;
-  slider->fOnSet = [&changes](float, float) { ++changes; };
-  root->layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 40.0f));
+// A screen of one node, for the tests of that node.
+template <class Child> struct One : scene::Node {
+  Child child;
+  explicit One(Child made) : child(std::move(made)) {}
+  void forEachChild(auto &&f) { f(child); }
+};
+template <class Child> One(Child) -> One<Child>;
 
-  // Half way is equally close to both ends, so the lower handle wins.
-  EXPECT_TRUE(root->click(60.0f, 20.0f));
-  EXPECT_TRUE(slider->dragging());
-  EXPECT_FLOAT_EQ(slider->low(), 0.5f);
-  EXPECT_FLOAT_EQ(slider->high(), 1.0f);
-
-  slider->dragTo(200.0f);
-  EXPECT_NEAR(slider->low(), 0.9f, 0.0001f);
-  EXPECT_FLOAT_EQ(slider->high(), 1.0f);
-  EXPECT_EQ(changes, 2);
-
-  slider->endDrag();
-  EXPECT_FALSE(slider->dragging());
+template <class Child>
+auto sceneOf(const scene::Spec &spec, Child child) {
+  return std::make_unique<scene::Scene<One<Child>>>(
+      std::in_place, scene::placed(spec, std::move(child)));
 }
 
+TEST(RangeSlider, OwnsHandleSelectionDragAndMinimumSpan) {
+  int changes = 0;
+  auto made = sceneOf({.x = 10.0f,
+                       .y = 13.0f,
+                       .width = 100.0f,
+                       .height = 14.0f,
+                       .relativeSize = scene::Axes::kNone},
+                      widgets::RangeSlider([&changes](float, float) { ++changes; }));
+  auto &s = *made;
+  auto &slider = s.root().child;
+  slider.setMinimumSpan(0.1f);
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 40.0f));
+
+  // Half way is equally close to both ends, so the lower handle wins.
+  EXPECT_TRUE(s.click(60.0f, 20.0f));
+  EXPECT_TRUE(slider.dragging());
+  EXPECT_FLOAT_EQ(slider.low(), 0.5f);
+  EXPECT_FLOAT_EQ(slider.high(), 1.0f);
+
+  slider.dragTo(200.0f);
+  EXPECT_NEAR(slider.low(), 0.9f, 0.0001f);
+  EXPECT_FLOAT_EQ(slider.high(), 1.0f);
+  EXPECT_EQ(changes, 2);
+
+  slider.endDrag();
+  EXPECT_FALSE(slider.dragging());
+}
+
+struct Opened {
+  int *opened;
+  void operator()() const { ++*opened; }
+};
+struct Chosen {
+  int *chosen;
+  scene::Node **list;
+  void operator()(int index) const {
+    *chosen = index;
+    (*list)->setVisible(false);
+  }
+};
+struct DropdownScreen : scene::Node {
+  widgets::DropdownButton<Opened> button;
+  widgets::DropdownList<Chosen> list;
+  DropdownScreen(int *opened, int *chosen, scene::Node **listNode)
+      : button(scene::make<widgets::DropdownButton<Opened>>(
+            {.width = 120.0f, .height = 30.0f}, "Sort", "Title",
+            Opened{opened})),
+        list(scene::make<widgets::DropdownList<Chosen>>(
+            {.y = 34.0f, .width = 120.0f}, Chosen{chosen, listNode})) {}
+  void forEachChild(auto &&f) {
+    f(button);
+    f(list);
+  }
+};
+
 TEST(Dropdown, ButtonAndRowsRouteTheirOwnClicks) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
   int opened = 0;
-  auto *button = root->add<widgets::DropdownButton>(
-      {.width = 120.0f, .height = 30.0f}, "Sort", "Title");
-  button->fOnOpen = [&opened] { ++opened; };
-
   int chosen = -1;
-  auto *list = root->add<widgets::DropdownList>(
-      {.y = 34.0f, .width = 120.0f});
-  list->setOptions({"Artist", "Title"});
-  list->setCurrent(1);
-  list->fOnChoose = [&chosen, list](int index) {
-    chosen = index;
-    list->setExpanded(false);
-  };
-  root->layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 120.0f));
+  scene::Node *listNode = nullptr;
+  scene::Scene<DropdownScreen> s{std::in_place, &opened, &chosen, &listNode};
+  s.state().apply({.fill = true});
+  auto &list = s.root().list;
+  listNode = &list;
+  list.setOptions({"Artist", "Title"});
+  list.setCurrent(1);
+  s.layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 120.0f));
 
-  EXPECT_TRUE(list->expanded());
-  EXPECT_TRUE(root->click(20.0f, 15.0f));
+  EXPECT_TRUE(list.expanded());
+  EXPECT_TRUE(s.click(20.0f, 15.0f));
   EXPECT_EQ(opened, 1);
   scene::PointerEvent down;
   down.fAction = scene::PointerAction::kDown;
   down.fX = 20.0f;
   down.fY = 64.0f;
-  EXPECT_TRUE(root->dispatchPointer(down));
+  EXPECT_TRUE(s.dispatchPointer(down));
   EXPECT_EQ(chosen, 1);
-  EXPECT_FALSE(list->expanded());
-  EXPECT_NE(root->capturedNode(), nullptr);
+  EXPECT_FALSE(list.expanded());
+  EXPECT_NE(s.capturedId(), 0u);
   scene::PointerEvent up = down;
   up.fAction = scene::PointerAction::kUp;
-  EXPECT_TRUE(root->dispatchPointer(up));
+  EXPECT_TRUE(s.dispatchPointer(up));
   EXPECT_EQ(chosen, 1);
-  EXPECT_EQ(root->capturedNode(), nullptr);
+  EXPECT_EQ(s.capturedId(), 0u);
 
-  EXPECT_FALSE(list->expanded());
-  EXPECT_FALSE(root->click(20.0f, 64.0f));
+  EXPECT_FALSE(list.expanded());
+  EXPECT_FALSE(s.click(20.0f, 64.0f));
 }
 
 TEST(Button, PrimaryAndEnabledStateOwnDamageAndInput) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
   int clicks = 0;
-  auto *button = root->add<widgets::Button>(
-      {.width = 100.0f, .height = 30.0f}, "Render", [&clicks] { ++clicks; });
-  root->layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
-  (void)root->finishFrame();
+  auto made = sceneOf({.width = 100.0f, .height = 30.0f},
+                      widgets::Button("Render", [&clicks] { ++clicks; }));
+  auto &s = *made;
+  auto &button = s.root().child;
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
+  (void)s.finishFrame();
 
-  button->setPrimary(true);
-  EXPECT_TRUE(button->primary());
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
-  button->setOutlined(true);
-  EXPECT_TRUE(button->outlined());
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
-  button->setAccent(0xff123456);
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
-  EXPECT_TRUE(root->click(20.0f, 15.0f));
+  button.setPrimary(true);
+  EXPECT_TRUE(button.primary());
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
+  button.setOutlined(true);
+  EXPECT_TRUE(button.outlined());
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
+  button.setAccent(0xff123456);
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
+  EXPECT_TRUE(s.click(20.0f, 15.0f));
   EXPECT_EQ(clicks, 1);
 
-  button->setEnabled(false);
-  EXPECT_FALSE(button->enabled());
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
-  EXPECT_FALSE(root->click(20.0f, 15.0f));
+  button.setEnabled(false);
+  EXPECT_FALSE(button.enabled());
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
+  EXPECT_FALSE(s.click(20.0f, 15.0f));
   EXPECT_EQ(clicks, 1);
 
-  root->setHover(-1.0f, -1.0f);
-  (void)root->finishFrame();
-  root->setHover(20.0f, 15.0f);
-  EXPECT_TRUE(root->finishFrame().fDamage.isEmpty());
+  s.setHover(-1.0f, -1.0f);
+  (void)s.finishFrame();
+  s.setHover(20.0f, 15.0f);
+  EXPECT_TRUE(s.finishFrame().fDamage.isEmpty());
 }
 
+struct Nothing {
+  void operator()(float) const {}
+};
+struct Nowhere {
+  void operator()() const {}
+};
+struct HoverScreen : scene::Node {
+  widgets::SliderBar<Nothing> slider = scene::make<widgets::SliderBar<Nothing>>(
+      {.width = 100.0f, .height = 14.0f}, Nothing{});
+  widgets::Button<Nowhere> button = scene::make<widgets::Button<Nowhere>>(
+      {.y = 20.0f, .width = 100.0f, .height = 30.0f}, "Apply", Nowhere{});
+  void forEachChild(auto &&f) {
+    f(slider);
+    f(button);
+  }
+};
+
 TEST(Hover, OnlyVisibleHoverChangesCauseDamage) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
-  auto *slider = root->add<widgets::SliderBar>(
-      {.width = 100.0f, .height = 14.0f});
-  slider->fOnSet = [](float) {};
-  root->add<widgets::Button>(
-      {.y = 20.0f, .width = 100.0f, .height = 30.0f}, "Apply", [] {});
-  root->layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 60.0f));
-  (void)root->finishFrame();
+  scene::Scene<HoverScreen> s{std::in_place};
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 60.0f));
+  (void)s.finishFrame();
 
-  root->setHover(20.0f, 7.0f);
-  EXPECT_TRUE(slider->hovered());
-  EXPECT_TRUE(root->finishFrame().fDamage.isEmpty());
+  s.setHover(20.0f, 7.0f);
+  EXPECT_TRUE(s.root().slider.hovered());
+  EXPECT_TRUE(s.finishFrame().fDamage.isEmpty());
 
-  root->setHover(20.0f, 35.0f);
-  EXPECT_FALSE(slider->hovered());
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
+  s.setHover(20.0f, 35.0f);
+  EXPECT_FALSE(s.root().slider.hovered());
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
 }
 
 TEST(TextBox, TextAndSelectionOwnDamage) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
-  auto *box = root->add<widgets::TextBox>(
-      {.width = 100.0f, .height = 30.0f}, "Size");
-  root->layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
-  (void)root->finishFrame();
+  auto made = sceneOf({.width = 100.0f, .height = 30.0f},
+                      widgets::TextBox("Size"));
+  auto &s = *made;
+  auto &box = s.root().child;
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
+  (void)s.finishFrame();
 
-  box->setText("1920x1080");
-  EXPECT_EQ(box->text(), "1920x1080");
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
+  box.setText("1920x1080");
+  EXPECT_EQ(box.text(), "1920x1080");
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
 
-  box->setSelected(true);
-  EXPECT_TRUE(box->selected());
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
+  box.setSelected(true);
+  EXPECT_TRUE(box.selected());
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
+}
+
+TEST(TextBox, MaskedTextStaysOutOfTheSemantics) {
+  auto made = sceneOf({.width = 100.0f, .height = 30.0f},
+                      widgets::TextBox("Password"));
+  auto &s = *made;
+  auto &box = s.root().child;
+  box.setMasked(true);
+  box.setText("secret");
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
+  const auto tree = s.semanticsTree();
+  ASSERT_EQ(tree.size(), 1u);
+  EXPECT_TRUE(tree[0].fValue.empty());
+  EXPECT_EQ(box.text(), "secret");
 }
 
 TEST(RangeSlider, RoutedDragKeepsCaptureOutsideItsBounds) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
-  auto *slider = root->add<widgets::RangeSlider>(
-      {.x = 10.0f,
-       .y = 13.0f,
-       .width = 100.0f,
-       .height = 14.0f,
-       .relativeSize = scene::Axes::kNone});
-  slider->setMinimumSpan(0.1f);
-  slider->fOnSet = [](float, float) {};
-  root->layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 40.0f));
+  auto made = sceneOf({.x = 10.0f,
+                       .y = 13.0f,
+                       .width = 100.0f,
+                       .height = 14.0f,
+                       .relativeSize = scene::Axes::kNone},
+                      widgets::RangeSlider([](float, float) {}));
+  auto &s = *made;
+  auto &slider = s.root().child;
+  slider.setMinimumSpan(0.1f);
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(200.0f, 40.0f));
 
   scene::PointerEvent down;
   down.fAction = scene::PointerAction::kDown;
   down.fX = 60.0f;
   down.fY = 20.0f;
-  EXPECT_TRUE(root->dispatchPointer(down));
-  EXPECT_EQ(root->capturedNode(), slider);
-  EXPECT_FLOAT_EQ(slider->low(), 0.5f);
+  EXPECT_TRUE(s.dispatchPointer(down));
+  EXPECT_EQ(s.capturedId(), slider.id());
+  EXPECT_FLOAT_EQ(slider.low(), 0.5f);
 
   scene::PointerEvent move;
   move.fAction = scene::PointerAction::kMove;
   move.fX = 200.0f;
   move.fY = 100.0f;
-  EXPECT_TRUE(root->dispatchPointer(move));
-  EXPECT_NEAR(slider->low(), 0.9f, 0.0001f);
+  EXPECT_TRUE(s.dispatchPointer(move));
+  EXPECT_NEAR(slider.low(), 0.9f, 0.0001f);
 
   scene::PointerEvent up;
   up.fAction = scene::PointerAction::kUp;
   up.fX = 200.0f;
   up.fY = 100.0f;
-  EXPECT_TRUE(root->dispatchPointer(up));
-  EXPECT_EQ(root->capturedNode(), nullptr);
-  EXPECT_FALSE(slider->dragging());
+  EXPECT_TRUE(s.dispatchPointer(up));
+  EXPECT_EQ(s.capturedId(), 0u);
+  EXPECT_FALSE(slider.dragging());
 }
 
 TEST(Button, TabFocusAndEnterActivate) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
   int clicks = 0;
-  auto *button = root->add<widgets::Button>(
-      {.width = 100.0f, .height = 30.0f}, "Apply", [&clicks] { ++clicks; });
-  root->layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
-  (void)root->finishFrame();
+  auto made = sceneOf({.width = 100.0f, .height = 30.0f},
+                      widgets::Button("Apply", [&clicks] { ++clicks; }));
+  auto &s = *made;
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
+  (void)s.finishFrame();
 
   scene::KeyEvent tab;
   tab.fKey = scene::Key::kTab;
-  EXPECT_TRUE(root->dispatchKey(tab));
-  EXPECT_EQ(root->focusedNode(), button);
-  EXPECT_FALSE(root->finishFrame().fDamage.isEmpty());
+  EXPECT_TRUE(s.dispatchKey(tab));
+  EXPECT_EQ(s.focusedId(), s.root().child.id());
+  EXPECT_FALSE(s.finishFrame().fDamage.isEmpty());
 
   scene::KeyEvent enter;
   enter.fKey = scene::Key::kEnter;
-  EXPECT_TRUE(root->dispatchKey(enter));
+  EXPECT_TRUE(s.dispatchKey(enter));
   EXPECT_EQ(clicks, 1);
 }
 
 TEST(TextBox, RoutedUtf8AndCompositionUseFocus) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
-  auto *box = root->add<widgets::TextBox>(
-      {.width = 100.0f, .height = 30.0f}, "Search");
   std::string changed;
-  box->fOnChanged = [&changed](std::string_view text) { changed = text; };
-  root->layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
+  auto made = sceneOf(
+      {.width = 100.0f, .height = 30.0f},
+      widgets::TextBox("Search",
+                       [&changed](std::string_view text) { changed = text; }));
+  auto &s = *made;
+  auto &box = s.root().child;
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
 
   scene::PointerEvent down;
   down.fAction = scene::PointerAction::kDown;
   down.fX = 10.0f;
   down.fY = 10.0f;
-  EXPECT_TRUE(root->dispatchPointer(down));
-  EXPECT_EQ(root->focusedNode(), box);
+  EXPECT_TRUE(s.dispatchPointer(down));
+  EXPECT_EQ(s.focusedId(), box.id());
 
   scene::TextInputEvent composing;
   composing.fComposition = "ka";
   composing.fCommit = false;
-  EXPECT_TRUE(root->dispatchText(composing));
-  EXPECT_TRUE(box->text().empty());
+  EXPECT_TRUE(s.dispatchText(composing));
+  EXPECT_TRUE(box.text().empty());
 
   scene::TextInputEvent commit;
   commit.fText = "か";
-  EXPECT_TRUE(root->dispatchText(commit));
-  EXPECT_EQ(box->text(), "か");
+  EXPECT_TRUE(s.dispatchText(commit));
+  EXPECT_EQ(box.text(), "か");
   EXPECT_EQ(changed, "か");
 
   scene::KeyEvent backspace;
   backspace.fKey = scene::Key::kBackspace;
-  EXPECT_TRUE(root->dispatchKey(backspace));
-  EXPECT_TRUE(box->text().empty());
+  EXPECT_TRUE(s.dispatchKey(backspace));
+  EXPECT_TRUE(box.text().empty());
 
-  const auto semantics = root->semanticsTree();
+  const auto semantics = s.semanticsTree();
   ASSERT_EQ(semantics.size(), 1u);
   EXPECT_EQ(semantics[0].fRole, scene::SemanticRole::kTextBox);
   EXPECT_TRUE(semantics[0].fFocused);
 }
 
-TEST(Accessibility, SemanticActionsOperateWidgets) {
-  auto root = scene::make<scene::Drawable>({.fill = true});
-  int clicks = 0;
-  root->add<widgets::Button>({.width = 100.0f, .height = 30.0f}, "Apply",
-                             [&clicks] { ++clicks; });
-  float sliderValue = 0.0f;
-  auto *slider = root->add<widgets::SliderBar>(
-      {.y = 35.0f, .width = 100.0f, .height = 14.0f});
-  slider->fOnSet = [&sliderValue](float value) { sliderValue = value; };
-  auto *box = root->add<widgets::TextBox>(
-      {.y = 55.0f, .width = 100.0f, .height = 30.0f}, "Search");
-  root->layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 100.0f));
+struct Counted {
+  int *clicks;
+  void operator()() const { ++*clicks; }
+};
+struct Stored {
+  float *value;
+  void operator()(float v) const { *value = v; }
+};
+struct AccessibleScreen : scene::Node {
+  widgets::Button<Counted> button;
+  widgets::SliderBar<Stored> slider;
+  widgets::TextBox<> box;
+  AccessibleScreen(int *clicks, float *value)
+      : button(scene::make<widgets::Button<Counted>>(
+            {.width = 100.0f, .height = 30.0f}, "Apply", Counted{clicks})),
+        slider(scene::make<widgets::SliderBar<Stored>>(
+            {.y = 35.0f, .width = 100.0f, .height = 14.0f}, Stored{value})),
+        box(scene::make<widgets::TextBox<>>(
+            {.y = 55.0f, .width = 100.0f, .height = 30.0f}, "Search")) {}
+  void forEachChild(auto &&f) {
+    f(button);
+    f(slider);
+    f(box);
+  }
+};
 
-  const auto tree = root->semanticsTree();
+TEST(Accessibility, SemanticActionsOperateWidgets) {
+  int clicks = 0;
+  float sliderValue = 0.0f;
+  scene::Scene<AccessibleScreen> s{std::in_place, &clicks, &sliderValue};
+  s.state().apply({.fill = true});
+  s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 100.0f));
+
+  const auto tree = s.semanticsTree();
   ASSERT_EQ(tree.size(), 3u);
   scene::SemanticActionEvent activate;
   activate.fAction = scene::SemanticAction::kActivate;
-  EXPECT_TRUE(root->dispatchSemantic(tree[0].fId, activate));
+  EXPECT_TRUE(s.dispatchSemantic(tree[0].fId, activate));
   EXPECT_EQ(clicks, 1);
 
   scene::SemanticActionEvent setSlider;
   setSlider.fAction = scene::SemanticAction::kSetValue;
   setSlider.fValue = 0.75f;
-  EXPECT_TRUE(root->dispatchSemantic(tree[1].fId, setSlider));
+  EXPECT_TRUE(s.dispatchSemantic(tree[1].fId, setSlider));
   EXPECT_FLOAT_EQ(sliderValue, 0.75f);
 
   scene::SemanticActionEvent setText;
   setText.fAction = scene::SemanticAction::kSetValue;
   setText.fText = "artist";
-  EXPECT_TRUE(root->dispatchSemantic(tree[2].fId, setText));
-  EXPECT_EQ(box->text(), "artist");
+  EXPECT_TRUE(s.dispatchSemantic(tree[2].fId, setText));
+  EXPECT_EQ(s.root().box.text(), "artist");
 }
 
 } // namespace

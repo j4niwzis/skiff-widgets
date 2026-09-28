@@ -9,7 +9,6 @@ export import skiff.widgets.theme;
 namespace skiff::widgets {
 using skiff::scene::Anchor;
 using skiff::scene::Axes;
-using skiff::scene::Drawable;
 using skiff::scene::Easing;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
@@ -20,11 +19,12 @@ export namespace skiff::widgets {
 // A rounded rectangle with a label in it that calls something when clicked,
 // and lightens under the pointer. AdwButton, and the five hand-written ones
 // this replaces.
-class Button : public skiff::scene::TypedDrawable<Button> {
+template <class Action = skiff::scene::NoAction>
+class Button : public skiff::scene::Node {
 public:
-  Button(std::string label, std::function<void()> action)
+  explicit Button(std::string label, Action action = {})
       : fLabel(std::move(label)), fAction(std::move(action)) {
-    fHeight = fTheme.fRowHeight;
+    fState.fHeight = fTheme.fRowHeight;
   }
 
   void setTheme(Theme value) {
@@ -75,13 +75,13 @@ public:
     this->markDamaged();
   }
 
-protected:
+public:
   Theme fTheme = theme();
-  bool acceptsInput() const override { return fEnabled; }
-  bool hoverChangesAppearance() const override { return fEnabled; }
-  bool focusChangesAppearance() const override { return fEnabled; }
+  [[nodiscard]] bool acceptsInput() const { return fEnabled; }
+  [[nodiscard]] bool hoverChangesAppearance() const { return fEnabled; }
+  [[nodiscard]] bool focusChangesAppearance() const { return fEnabled; }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kButton;
     out.fLabel = fLabel;
@@ -91,39 +91,37 @@ protected:
     return out;
   }
 
-  bool onClick(float x, float y) override {
-    if (!fEnabled || !fBounds.contains(x, y)) {
+  [[nodiscard]] bool onClick(float x, float y) {
+    if (!fEnabled || !fState.fBounds.contains(x, y)) {
       return false;
     }
-    if (fAction) {
-      fAction();
-    }
+    std::invoke(fAction);
     return true;
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    const bool hot = (fHovered || this->focused()) && fEnabled;
+    const bool hot = (fState.fHovered || this->focused()) && fEnabled;
     skia::SkColor fill = fPrimary ? fTheme.fAccent : fTheme.fSurface;
     if (hot) {
       fill =
           fPrimary ? skiff::paint::lighten(fill, 0.12f) : fTheme.fSurfaceHover;
     }
-    p.fillRounded(fBounds, fTheme.fCorner, fill,
+    p.fillRounded(fState.fBounds, fTheme.fCorner, fill,
                   alpha * (fEnabled ? 1.0f : 0.5f));
     if (fOutlined && !fPrimary) {
-      p.strokeRounded(fBounds, fTheme.fCorner, fTheme.fAccent,
+      p.strokeRounded(fState.fBounds, fTheme.fCorner, fTheme.fAccent,
                       hot ? 3.0f : 2.0f,
                       alpha * (fEnabled ? 1.0f : 0.5f));
     }
     const skia::SkColor text =
         fPrimary ? fTheme.fOnAccent
                  : (fOutlined && hot ? fTheme.fAccent : fTheme.fText);
-    p.textCentredIn(fBounds, fLabel, fTheme.fFontSize,
+    p.textCentredIn(fState.fBounds, fLabel, fTheme.fFontSize,
                     text,
                     alpha * (fEnabled ? 1.0f : 0.5f), true);
   }
@@ -133,7 +131,10 @@ private:
   bool fOutlined = false;
   bool fEnabled = true;
   std::string fLabel;
-  std::function<void()> fAction;
+  [[no_unique_address]] Action fAction;
 };
+
+Button(const char *) -> Button<>;
+Button(std::string) -> Button<>;
 
 } // namespace skiff::widgets

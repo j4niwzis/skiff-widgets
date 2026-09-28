@@ -8,7 +8,6 @@ import skiff.scene;
 namespace skiff::widgets {
 using skiff::scene::Anchor;
 using skiff::scene::Axes;
-using skiff::scene::Drawable;
 using skiff::scene::Easing;
 using skiff::scene::Margin;
 using skiff::scene::Spec;

@@ -9,7 +9,6 @@ export import skiff.widgets.theme;
 namespace skiff::widgets {
 using skiff::scene::Anchor;
 using skiff::scene::Axes;
-using skiff::scene::Drawable;
 using skiff::scene::Easing;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
@@ -23,23 +22,27 @@ export namespace skiff::widgets {
 // how to say that one of them was clicked. What a tab means is the caller's
 // business, and so is anything drawn beside the selected one, which is what
 // drawDecoration is for.
-class TabBar : public skiff::scene::TypedDrawable<TabBar> {
+template <class OnSelect = skiff::scene::NoAction,
+          class IsActive = skiff::scene::NoAction,
+          class Decorate = skiff::scene::NoAction>
+class TabBar : public skiff::scene::Node {
 public:
   struct Tab {
     std::string fLabel;
     int fValue = 0;
   };
 
-  TabBar() {
-    fRelativeSizeAxes = Axes::kX;
-    fWidth = 1.0f;
+  // What selecting a tab does; which tabs read as selected -- left out it is
+  // the one whose value is selected(), and a bar where several can be on at
+  // once answers for itself; and what is drawn after the selected tab, given
+  // its box: a sort chevron, a count, an underline.
+  explicit TabBar(OnSelect onSelect = {}, IsActive isActive = {},
+                  Decorate decorate = {})
+      : fOnSelect(std::move(onSelect)), fIsActive(std::move(isActive)),
+        fDecorate(std::move(decorate)) {
+    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fWidth = 1.0f;
   }
-
-  std::function<void(int)> fOnSelect;
-  // Which tabs read as selected. Left unset it is the one whose value is
-  // selected(); a bar where several can be on at once -- a set of toggles
-  // laid out as tabs -- answers for itself instead.
-  std::function<bool(int)> fIsActive;
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -98,12 +101,12 @@ public:
       return skia::SkRect::MakeEmpty();
     }
     const skia::SkRect &local = fRects[i];
-    return skia::SkRect::MakeXYWH(fBounds.fLeft + local.fLeft,
-                                  fBounds.fTop + local.fTop, local.width(),
+    return skia::SkRect::MakeXYWH(fState.fBounds.fLeft + local.fLeft,
+                                  fState.fBounds.fTop + local.fTop, local.width(),
                                   local.height());
   }
 
-protected:
+public:
   Theme fTheme = theme();
   std::string fHeader;       // caption in the column to the left, may be empty
   float fHeaderWidth = 0.0f; // where the tabs start, header or no header
@@ -117,14 +120,14 @@ protected:
   // The height depends on how the tabs wrap, which depends on the width this
   // has been given, so it is worked out here where that is known and the
   // positions are kept for drawing and for hit testing.
-  void measure(const skia::SkRect &parent) override {
+  void measure(const skia::SkRect &parent) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
     }
     const skiff::paint::Painter p(nullptr, *font);
     const float width =
-        hasX(fRelativeSizeAxes) ? parent.width() * fWidth : fWidth;
+        hasX(fState.fRelativeSizeAxes) ? parent.width() * fState.fWidth : fState.fWidth;
     float x = fHeaderWidth;
     float y = 0.0f;
     fRects.clear();
@@ -139,21 +142,21 @@ protected:
       fRects.push_back(skia::SkRect::MakeXYWH(x, y, w, fLineHeight));
       x += w + fSpacing + (this->activeTab(tab) ? fSelectedExtra : 0.0f);
     }
-    fHeight = y + fLineHeight;
+    fState.fHeight = y + fLineHeight;
   }
 
   // The bar lights the tab under the pointer, so moving between two tabs of
   // the same bar changes what it draws while the bar itself stays hovered.
   // Nothing else in the tree would notice that.
-  void update(double) override {
-    const int hot = this->tabAt(this->hoverX(), this->hoverY());
+  void update(double) {
+    const int hot = this->tabAt(fState.hoverX(), fState.hoverY());
     if (hot != fHotTab) {
       fHotTab = hot;
       this->markDamaged();
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
@@ -161,7 +164,7 @@ protected:
     const skiff::paint::Painter p(canvas, *font);
     const float baseline = fBaseline >= 0.0f ? fBaseline : fFontSize;
     if (!fHeader.empty()) {
-      p.text(fHeader, fBounds.fLeft, fBounds.fTop + baseline, fFontSize,
+      p.text(fHeader, fState.fBounds.fLeft, fState.fBounds.fTop + baseline, fFontSize,
              fTheme.fLabel, alpha);
     }
     for (std::size_t i = 0; i < fTabs.size(); ++i) {
@@ -174,18 +177,18 @@ protected:
       p.text(fTabs[i].fLabel, box.fLeft, box.fTop + baseline, fFontSize, colour,
              alpha, active);
       if (active) {
-        this->drawDecoration(canvas, box, alpha);
+        std::invoke(fDecorate, canvas, box, alpha);
       }
     }
     if (this->focused()) {
-      p.strokeRounded(fBounds, 3.0f, fTheme.fAccent, 1.0f, alpha);
+      p.strokeRounded(fState.fBounds, 3.0f, fTheme.fAccent, 1.0f, alpha);
     }
   }
 
-  bool acceptsInput() const override { return true; }
-  bool focusChangesAppearance() const override { return true; }
+  [[nodiscard]] bool acceptsInput() const { return true; }
+  [[nodiscard]] bool focusChangesAppearance() const { return true; }
 
-  void onKeyEvent(skiff::scene::KeyEvent &event) override {
+  void onKeyEvent(skiff::scene::KeyEvent &event) {
     if (event.fPhase != skiff::scene::EventPhase::kTarget ||
         !event.fPressed || fTabs.empty()) {
       return;
@@ -206,16 +209,14 @@ protected:
     } else if (event.fKey == skiff::scene::Key::kEnd) {
       index = fTabs.size() - 1;
     } else {
-      Drawable::onKeyEvent(event);
+      skiff::scene::defaultKeyEvent(*this, event);
       return;
     }
-    if (fOnSelect) {
-      fOnSelect(fTabs[index].fValue);
-    }
+    std::invoke(fOnSelect, fTabs[index].fValue);
     event.handle();
   }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kTab;
     out.fLabel = fHeader;
@@ -230,7 +231,7 @@ protected:
     return out;
   }
 
-  void onSemanticAction(skiff::scene::SemanticActionEvent &event) override {
+  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
     if (event.fAction == skiff::scene::SemanticAction::kIncrement ||
         event.fAction == skiff::scene::SemanticAction::kDecrement) {
       skiff::scene::KeyEvent key;
@@ -242,27 +243,25 @@ protected:
         event.handle();
       }
     } else {
-      Drawable::onSemanticAction(event);
+      skiff::scene::defaultSemanticAction(*this, event);
     }
   }
 
-  bool onClick(float x, float y) override {
+  [[nodiscard]] bool onClick(float x, float y) {
     const int hit = this->tabAt(x, y);
     if (hit < 0) {
       return false;
     }
-    if (fOnSelect) {
-      fOnSelect(fTabs[static_cast<std::size_t>(hit)].fValue);
-    }
+    std::invoke(fOnSelect, fTabs[static_cast<std::size_t>(hit)].fValue);
     return true;
   }
 
-  // Drawn after the selected tab, given its box. A sort direction chevron, a
-  // count, an underline -- whatever the caller puts there.
-  virtual void drawDecoration(skia::SkCanvas *, const skia::SkRect &, float) {}
-
   [[nodiscard]] bool activeTab(const Tab &tab) const {
-    return fIsActive ? fIsActive(tab.fValue) : tab.fValue == fSelected;
+    if constexpr (skiff::scene::kActs<IsActive>) {
+      return std::invoke(fIsActive, tab.fValue);
+    } else {
+      return tab.fValue == fSelected;
+    }
   }
 
   [[nodiscard]] int tabAt(float x, float y) const {
@@ -275,10 +274,15 @@ protected:
   }
 
 private:
+  [[no_unique_address]] OnSelect fOnSelect;
+  [[no_unique_address]] IsActive fIsActive;
+  [[no_unique_address]] Decorate fDecorate;
   std::vector<Tab> fTabs;
   std::vector<skia::SkRect> fRects; // relative to this bar
   int fSelected = -1;
   int fHotTab = -1;
 };
+
+TabBar() -> TabBar<>;
 
 } // namespace skiff::widgets

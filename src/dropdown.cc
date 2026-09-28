@@ -10,7 +10,6 @@ export import skiff.widgets.theme;
 namespace skiff::widgets {
 using skiff::scene::Anchor;
 using skiff::scene::Axes;
-using skiff::scene::Drawable;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -18,23 +17,21 @@ using skiff::scene::Spec;
 export namespace skiff::widgets {
 
 // The closed half of a dropdown. The label, current value and open state are
-// data; hover, hit testing and the chevron belong to the widget. Keeping this
-// beside DropdownList gives screens both reusable pieces without forcing a
-// particular placement or state model on them.
-class DropdownButton : public skiff::scene::TypedDrawable<DropdownButton> {
+// data; hover, hit testing and the chevron belong to the widget.
+template <class OnOpen = skiff::scene::NoAction>
+class DropdownButton : public skiff::scene::Node {
 public:
-  DropdownButton(std::string label = {}, std::string value = {})
-      : fLabel(std::move(label)), fValue(std::move(value)) {
-    fHeight = 30.0f;
+  explicit DropdownButton(std::string label = {}, std::string value = {},
+                          OnOpen onOpen = {})
+      : fOnOpen(std::move(onOpen)), fLabel(std::move(label)),
+        fValue(std::move(value)) {
+    fState.fHeight = 30.0f;
   }
-
-  std::function<void()> fOnOpen;
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
     this->markDamaged();
   }
-
   void setLabel(std::string label) {
     if (label == fLabel) {
       return;
@@ -42,7 +39,6 @@ public:
     fLabel = std::move(label);
     this->markDamaged();
   }
-
   void setValue(std::string value) {
     if (value == fValue) {
       return;
@@ -50,7 +46,6 @@ public:
     fValue = std::move(value);
     this->markDamaged();
   }
-
   void setOpen(bool open) {
     if (open == fOpen) {
       return;
@@ -60,7 +55,6 @@ public:
   }
   [[nodiscard]] bool open() const noexcept { return fOpen; }
 
-protected:
   Theme fTheme = theme();
   float fLabelWidth = 52.0f;
   float fChevronWidth = 22.0f;
@@ -69,27 +63,28 @@ protected:
   float fLabelAlpha = 0.5f;
   float fValueAlpha = 0.95f;
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
     }
+    const skia::SkRect &bounds = fState.fBounds;
     const skiff::paint::Painter p(canvas, *font);
-    p.fillRounded(fBounds, fTheme.fCorner,
-                  fHovered || this->focused() || fOpen ? fTheme.fSurfaceHover
-                                                       : fTheme.fSurface,
+    p.fillRounded(bounds, fTheme.fCorner,
+                  fState.fHovered || this->focused() || fOpen
+                      ? fTheme.fSurfaceHover
+                      : fTheme.fSurface,
                   alpha);
-    p.strokeRounded(fBounds, fTheme.fCorner,
+    p.strokeRounded(bounds, fTheme.fCorner,
                     fOpen ? fTheme.fAccent : fTheme.fSurfaceActive,
                     fOpen ? fOpenStrokeWidth : fStrokeWidth, alpha);
-    const float baseline = p.middleBaseline(fBounds, fTheme.fFontSize);
-    p.textClipped(fLabel, fBounds.fLeft + fTheme.fPaddingX, baseline,
+    const float baseline = p.middleBaseline(bounds, fTheme.fFontSize);
+    p.textClipped(fLabel, bounds.fLeft + fTheme.fPaddingX, baseline,
                   fLabelWidth, fTheme.fFontSize, fTheme.fLabel,
                   alpha * fLabelAlpha);
-    const float valueLeft =
-        fBounds.fLeft + fTheme.fPaddingX + fLabelWidth;
+    const float valueLeft = bounds.fLeft + fTheme.fPaddingX + fLabelWidth;
     p.textClipped(fValue, valueLeft, baseline,
-                  std::max(0.0f, fBounds.fRight - valueLeft - fChevronWidth),
+                  std::max(0.0f, bounds.fRight - valueLeft - fChevronWidth),
                   fTheme.fFontSize, fTheme.fText, alpha * fValueAlpha);
 
     skia::SkPaint triangle;
@@ -97,8 +92,8 @@ protected:
     triangle.setColor(fTheme.fText);
     triangle.setAlphaf(alpha * 0.7f);
     skia::SkPathBuilder path;
-    const float cx = fBounds.fRight - fChevronWidth * 0.5f;
-    const float cy = fBounds.centerY();
+    const float cx = bounds.fRight - fChevronWidth * 0.5f;
+    const float cy = bounds.centerY();
     if (fOpen) {
       path.moveTo(cx - 5.0f, cy + 2.5f);
       path.lineTo(cx + 5.0f, cy + 2.5f);
@@ -112,15 +107,17 @@ protected:
     canvas->drawPath(path.detach(), triangle);
   }
 
-  bool acceptsInput() const override { return static_cast<bool>(fOnOpen); }
-  bool hoverChangesAppearance() const override {
-    return static_cast<bool>(fOnOpen) && !fOpen;
+  [[nodiscard]] bool acceptsInput() const {
+    return skiff::scene::kActs<OnOpen>;
   }
-  bool focusChangesAppearance() const override {
-    return static_cast<bool>(fOnOpen) && !fOpen;
+  [[nodiscard]] bool hoverChangesAppearance() const {
+    return skiff::scene::kActs<OnOpen> && !fOpen;
+  }
+  [[nodiscard]] bool focusChangesAppearance() const {
+    return skiff::scene::kActs<OnOpen> && !fOpen;
   }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kButton;
     out.fLabel = fLabel;
@@ -131,89 +128,172 @@ protected:
     return out;
   }
 
-  bool onClick(float, float) override {
-    if (!fOnOpen) {
+  [[nodiscard]] bool onClick(float, float) {
+    if (!skiff::scene::kActs<OnOpen>) {
       return false;
     }
-    fOnOpen();
+    std::invoke(fOnOpen);
     return true;
   }
 
 private:
+  [[no_unique_address]] OnOpen fOnOpen;
   std::string fLabel;
   std::string fValue;
   bool fOpen = false;
 };
+DropdownButton() -> DropdownButton<>;
+DropdownButton(std::string) -> DropdownButton<>;
+DropdownButton(std::string, std::string) -> DropdownButton<>;
+
+// How a dropdown list's rows look: the list's, copied to each row so a row
+// draws itself without reaching back to the list.
+struct DropdownLook {
+  Theme fTheme = theme();
+  float fRowHeight = 24.0f;
+  float fFontSize = 13.0f;
+  float fPlateRadius = 6.0f;
+  float fRowRadius = 6.0f;
+  float fTextInset = 12.0f;
+  float fDimAlpha = 0.8f; // an option that is not the current one
+};
+
+// One option of an open dropdown. It lights when the pointer is on it, and
+// its press is the list's to act on: the list sees it in the bubble phase,
+// by the row's id.
+class DropdownRow : public skiff::scene::Node {
+public:
+  DropdownRow(std::string label, const DropdownLook &look)
+      : fLabel(std::move(label)), fLook(look) {
+    fState.fRelativeSizeAxes = skiff::scene::Axes::kX;
+    fState.fWidth = 1.0f;
+    fState.fHeight = look.fRowHeight;
+  }
+
+  void setChosen(bool chosen) {
+    if (chosen != fChosen) {
+      fChosen = chosen;
+      this->markDamaged();
+    }
+  }
+  void setLook(const DropdownLook &look) {
+    fLook = look;
+    fState.fHeight = look.fRowHeight;
+    this->invalidateLayout();
+  }
+  [[nodiscard]] const std::string &label() const noexcept { return fLabel; }
+
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+    skia::SkFont *font = skiff::paint::defaultFont();
+    if (font == nullptr) {
+      return;
+    }
+    const Theme &theme = fLook.fTheme;
+    const skia::SkRect &bounds = fState.fBounds;
+    const skiff::paint::Painter p(canvas, *font);
+    if (fChosen || fState.fHovered || this->focused()) {
+      p.fillRounded(bounds, fLook.fRowRadius,
+                    fChosen ? theme.fAccent : theme.fSurfaceHover, alpha);
+    }
+    p.textIn(bounds, fLabel, fLook.fFontSize,
+             fChosen ? theme.fOnAccent : theme.fText,
+             alpha * (fChosen ? 1.0f : fLook.fDimAlpha), false,
+             fLook.fTextInset);
+  }
+
+  [[nodiscard]] bool acceptsInput() const { return true; }
+  [[nodiscard]] bool hoverChangesAppearance() const { return !fChosen; }
+  [[nodiscard]] bool focusChangesAppearance() const { return true; }
+
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
+    skiff::scene::Semantics out;
+    out.fRole = skiff::scene::SemanticRole::kListItem;
+    out.fLabel = fLabel;
+    out.fSelected = fChosen;
+    out.fActions = {skiff::scene::SemanticAction::kFocus,
+                    skiff::scene::SemanticAction::kActivate};
+    return out;
+  }
+
+  // The press is held: the list closes on it, and the release must not
+  // fall through to what was under the list.
+  void onPointerEvent(skiff::scene::PointerEvent &event) {
+    using skiff::scene::EventPhase;
+    using skiff::scene::PointerAction;
+    if (event.fPhase != EventPhase::kTarget) {
+      return;
+    }
+    if (event.fAction == PointerAction::kDown) {
+      event.capturePointer();
+    } else if (event.fAction == PointerAction::kUp ||
+               event.fAction == PointerAction::kCancel) {
+      event.releasePointer();
+      event.handle();
+    }
+  }
+
+private:
+  std::string fLabel;
+  DropdownLook fLook;
+  bool fChosen = false;
+};
 
 // The open half of a dropdown: a plate with a row per option, the current one
-// held at full strength and the one under the pointer lit.
-//
-// Only the open half, because that is the half that is the same everywhere.
-// The closed control is a row in a settings panel one place and a labelled box
-// with a chevron another, and both of those belong to their screen; what they
-// share is what happens after the click.
-//
-// It is a flow of real rows rather than a rectangle that draws several. That
-// is the difference between a widget that has to be told how tall it is and
-// one that knows: the height comes from the children, each row is placed by
-// the flow, each row is asked whether the click was in it, and each row
-// notices the pointer arriving on its own. None of those is arithmetic anybody
-// has to write down, and none of them can drift from the arithmetic somewhere
-// else that used to have to agree with it.
-class DropdownList
-    : public skiff::scene::TypedDrawable<DropdownList,
-                                         skiff::nodes::FillFlow> {
+// held at full strength and the one under the pointer lit. The height comes
+// from the rows; each row notices the pointer and is hit on its own.
+template <class OnChoose = skiff::scene::NoAction>
+class DropdownList : public skiff::scene::Node {
 public:
-  DropdownList()
-      : TypedDrawable(Direction::kVertical, 0.0f, kRowGap) {
-    fAutoSizeAxes = Axes::kY;
+  explicit DropdownList(OnChoose onChoose = {})
+      : fOnChoose(std::move(onChoose)) {
+    fState.fAutoSizeAxes = skiff::scene::Axes::kY;
     // Two above the first row, four below the last, which is where the plate
-    // ends. Asymmetric because that is how it has always looked.
-    fPadding = {kTopInset, 0.0f, kBottomInset, 0.0f};
-    fWrap = false;
+    // ends.
+    fState.fPadding = {kTopInset, 0.0f, kBottomInset, 0.0f};
   }
 
-  std::function<void(int)> fOnChoose;
+  void forEachChild(auto &&f) { f(fRows); }
 
   void setTheme(Theme value) {
-    fTheme = std::move(value);
-    this->markDamaged();
+    fLook.fTheme = std::move(value);
+    this->restyleRows();
   }
   void setRowHeight(float height) {
-    if (height != fRowHeight) {
-      fRowHeight = height;
-      this->invalidateLayout();
+    if (height != fLook.fRowHeight) {
+      fLook.fRowHeight = height;
+      this->restyleRows();
     }
   }
   void setFontSize(float size) {
-    if (size != fFontSize) {
-      fFontSize = size;
-      this->markDamaged();
+    if (size != fLook.fFontSize) {
+      fLook.fFontSize = size;
+      this->restyleRows();
     }
   }
   void setRadii(float plate, float row) {
-    if (plate != fPlateRadius || row != fRowRadius) {
-      fPlateRadius = plate;
-      fRowRadius = row;
-      this->markDamaged();
+    if (plate != fLook.fPlateRadius || row != fLook.fRowRadius) {
+      fLook.fPlateRadius = plate;
+      fLook.fRowRadius = row;
+      this->restyleRows();
     }
   }
   void setTextInset(float inset) {
-    if (inset != fTextInset) {
-      fTextInset = inset;
-      this->markDamaged();
+    if (inset != fLook.fTextInset) {
+      fLook.fTextInset = inset;
+      this->restyleRows();
     }
   }
 
   void setOptions(std::vector<std::string> options) {
-    if (options == fLabels) {
+    if (options.size() == fRows.size() &&
+        std::ranges::equal(options, fRows, {}, {}, &DropdownRow::label)) {
       return;
     }
-    fLabels = std::move(options);
-    this->clear();
-    for (std::size_t i = 0; i < fLabels.size(); ++i) {
-      this->add<Row>({.fillX = true, .height = fRowHeight}, this, i);
+    fRows.clear();
+    for (std::string &label : options) {
+      fRows.emplace_back(std::move(label), fLook);
     }
+    this->markChosen();
     this->invalidateLayout();
   }
 
@@ -222,57 +302,60 @@ public:
       return;
     }
     fCurrent = current;
-    this->markDamaged();
+    this->markChosen();
   }
   [[nodiscard]] int current() const noexcept { return fCurrent; }
 
-  void setExpanded(bool expanded) {
-    if (expanded == fVisible) {
-      return;
+  void setExpanded(bool expanded) { this->setVisible(expanded); }
+  [[nodiscard]] bool expanded() const noexcept { return fState.fVisible; }
+
+  void layoutChildren() {
+    const skia::SkRect box = fState.contentBox();
+    float y = 0.0f;
+    for (DropdownRow &row : fRows) {
+      row.fState.arrange(0.0f, y);
+      skiff::scene::layout(row, box);
+      y += row.fState.fBounds.height() + kRowGap;
     }
-    // setVisible damages the old plate before hiding it and invalidates the
-    // flow because hidden children were deliberately skipped.
-    this->setVisible(expanded);
   }
-  [[nodiscard]] bool expanded() const noexcept { return fVisible; }
 
-protected:
-  Theme fTheme = theme();
-  float fRowHeight = 24.0f;
-  float fFontSize = 13.0f;
-  float fPlateRadius = 6.0f;
-  float fRowRadius = 6.0f;
-  float fTextInset = 12.0f;
-  float fDimAlpha = 0.8f; // an option that is not the current one
-
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr || fLabels.empty()) {
+    if (font == nullptr || fRows.empty()) {
       return;
     }
-    // Its own backing plate, since what is underneath it stays where it is.
-    // The rows are children and draw themselves over this.
+    // Its own backing plate, since what is underneath stays where it is.
     const skiff::paint::Painter p(canvas, *font);
-    p.fillRounded(fBounds, fPlateRadius, fTheme.fSurface, alpha);
-    p.strokeRounded(fBounds, fPlateRadius, fTheme.fAccent, 1.5f, alpha);
+    p.fillRounded(fState.fBounds, fLook.fPlateRadius, fLook.fTheme.fSurface,
+                  alpha);
+    p.strokeRounded(fState.fBounds, fLook.fPlateRadius, fLook.fTheme.fAccent,
+                    1.5f, alpha);
   }
 
-  // A click that lands between two rows is still a click on the list, and is
-  // swallowed: an open dropdown covers what is under it, and the thing under
-  // it must not receive what was aimed at the gap. Rows are children, so they
-  // are asked first and this is only reached by the gaps.
-  bool acceptsInput() const override { return fVisible; }
-  bool focusable() const override { return false; }
-  bool hoverChangesAppearance() const override { return false; }
-  void onPointerEvent(skiff::scene::PointerEvent &event) override {
+  // A click between two rows is still a click on the list, and is
+  // swallowed: an open dropdown covers what is under it.
+  [[nodiscard]] bool acceptsInput() const { return fState.fVisible; }
+  [[nodiscard]] bool focusable() const { return false; }
+
+  void onPointerEvent(skiff::scene::PointerEvent &event) {
     using skiff::scene::EventPhase;
     using skiff::scene::PointerAction;
-    if (event.fPhase != EventPhase::kTarget) {
+    if (event.fPhase == EventPhase::kCapture) {
       return;
     }
-    // Padding and row gaps are part of the open popover. Capture the gesture
-    // so a later release still belongs here even if the owner closes the
-    // dropdown in response to the press.
+    if (event.fPhase == EventPhase::kBubble) {
+      // A row's press. Choosing on press is the widget's contract: screens
+      // read their action as soon as the press is dispatched.
+      if (event.fAction == PointerAction::kDown) {
+        if (const int index = this->rowOf(event.fTarget); index >= 0) {
+          std::invoke(fOnChoose, index);
+          event.handle();
+        }
+      }
+      return;
+    }
+    // The list itself: the padding and the gaps. Held, so that a release
+    // after the owner closed the list still belongs here.
     if (event.fAction == PointerAction::kDown) {
       event.capturePointer();
       event.handle();
@@ -283,95 +366,55 @@ protected:
     }
   }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
+    if (event.fPhase == skiff::scene::EventPhase::kBubble &&
+        event.fAction == skiff::scene::SemanticAction::kActivate) {
+      if (const int index = this->rowOf(event.fTarget); index >= 0) {
+        std::invoke(fOnChoose, index);
+        event.handle();
+      }
+      return;
+    }
+    skiff::scene::defaultSemanticAction(*this, event);
+  }
+
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kList;
     return out;
   }
+
+  std::vector<DropdownRow> fRows;
 
 private:
   static constexpr float kRowGap = 2.0f;
   static constexpr float kTopInset = 2.0f;
   static constexpr float kBottomInset = 4.0f;
 
-  // One option. It lights when the pointer is on it, which the framework
-  // tells it, and reports its own click, which the framework routes to it.
-  class Row : public Drawable {
-  public:
-    Row(DropdownList *list, std::size_t index) : fList(list), fIndex(index) {}
-
-  protected:
-    void drawSelf(skia::SkCanvas *canvas, float alpha) override {
-      skia::SkFont *font = skiff::paint::defaultFont();
-      if (font == nullptr || fIndex >= fList->fLabels.size()) {
-        return;
-      }
-      const Theme &theme = fList->fTheme;
-      const skiff::paint::Painter p(canvas, *font);
-      const bool chosen = static_cast<int>(fIndex) == fList->fCurrent;
-      if (chosen || fHovered || this->focused()) {
-        p.fillRounded(fBounds, fList->fRowRadius,
-                      chosen ? theme.fAccent : theme.fSurfaceHover, alpha);
-      }
-      p.textIn(fBounds, fList->fLabels[fIndex], fList->fFontSize,
-               chosen ? theme.fOnAccent : theme.fText,
-               alpha * (chosen ? 1.0f : fList->fDimAlpha), false,
-               fList->fTextInset);
-    }
-
-    bool acceptsInput() const override { return true; }
-    bool hoverChangesAppearance() const override {
-      return static_cast<int>(fIndex) != fList->fCurrent;
-    }
-    bool focusChangesAppearance() const override { return true; }
-
-    [[nodiscard]] skiff::scene::Semantics semantics() const override {
-      skiff::scene::Semantics out;
-      out.fRole = skiff::scene::SemanticRole::kListItem;
-      if (fIndex < fList->fLabels.size()) {
-        out.fLabel = fList->fLabels[fIndex];
-      }
-      out.fSelected = static_cast<int>(fIndex) == fList->fCurrent;
-      out.fActions = {skiff::scene::SemanticAction::kFocus,
-                      skiff::scene::SemanticAction::kActivate};
-      return out;
-    }
-
-    void onPointerEvent(skiff::scene::PointerEvent &event) override {
-      using skiff::scene::EventPhase;
-      using skiff::scene::PointerAction;
-      if (event.fPhase != EventPhase::kTarget) {
-        return;
-      }
-      switch (event.fAction) {
-      case PointerAction::kDown:
-        // Choosing on down is the widget's existing contract: screens read
-        // their action immediately after dispatching the press. Pointer
-        // capture keeps the matching release from falling through after the
-        // callback collapses this list.
-        event.capturePointer();
-        if (fList->fOnChoose) {
-          fList->fOnChoose(static_cast<int>(fIndex));
-        }
-        event.handle();
-        break;
-      case PointerAction::kUp:
-      case PointerAction::kCancel:
-        event.releasePointer();
-        event.handle();
-        break;
-      default:
-        break;
+  [[nodiscard]] int rowOf(skiff::scene::NodeId id) const {
+    for (std::size_t i = 0; i < fRows.size(); ++i) {
+      if (fRows[i].id() == id) {
+        return static_cast<int>(i);
       }
     }
+    return -1;
+  }
+  void markChosen() {
+    for (std::size_t i = 0; i < fRows.size(); ++i) {
+      fRows[i].setChosen(static_cast<int>(i) == fCurrent);
+    }
+  }
+  void restyleRows() {
+    for (DropdownRow &row : fRows) {
+      row.setLook(fLook);
+    }
+    this->markDamaged();
+  }
 
-  private:
-    DropdownList *fList;
-    std::size_t fIndex;
-  };
-
-  std::vector<std::string> fLabels;
+  [[no_unique_address]] OnChoose fOnChoose;
+  DropdownLook fLook;
   int fCurrent = -1;
 };
+DropdownList() -> DropdownList<>;
 
 } // namespace skiff::widgets

@@ -9,7 +9,6 @@ export import skiff.widgets.theme;
 namespace skiff::widgets {
 using skiff::scene::Anchor;
 using skiff::scene::Axes;
-using skiff::scene::Drawable;
 using skiff::scene::Margin;
 using skiff::scene::Spec;
 } // namespace skiff::widgets
@@ -23,15 +22,14 @@ export namespace skiff::widgets {
 // the pointer goes, which is the screen's business. fractionAt turns a
 // pointer position into a value using the bar's own bounds, which is the part
 // the screen would otherwise work out from a rectangle it kept a copy of.
-class SliderBar : public skiff::scene::TypedDrawable<SliderBar> {
+template <class OnSet = skiff::scene::NoAction>
+class SliderBar : public skiff::scene::Node {
 public:
-  SliderBar() {
-    fRelativeSizeAxes = Axes::kX;
-    fWidth = 1.0f;
-    fHeight = 6.0f;
+  explicit SliderBar(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
+    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fWidth = 1.0f;
+    fState.fHeight = 6.0f;
   }
-
-  std::function<void(float)> fOnSet;
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -50,13 +48,13 @@ public:
 
   // Where along the track a pointer at x sits, as a fraction.
   [[nodiscard]] float fractionAt(float x) const {
-    if (fBounds.width() <= 0.0f) {
+    if (fState.fBounds.width() <= 0.0f) {
       return fFraction;
     }
-    return std::clamp((x - fBounds.fLeft) / fBounds.width(), 0.0f, 1.0f);
+    return std::clamp((x - fState.fBounds.fLeft) / fState.fBounds.width(), 0.0f, 1.0f);
   }
 
-protected:
+public:
   Theme fTheme = theme();
   float fKnobRadius = 7.0f;
   float fTrackRadius = 3.0f;
@@ -65,22 +63,22 @@ protected:
   // taller than the box that is drawn.
   [[nodiscard]] skia::SkRect reach() const {
     return skia::SkRect::MakeLTRB(
-        fBounds.fLeft, fBounds.centerY() - fKnobRadius, fBounds.fRight,
-        fBounds.centerY() + fKnobRadius);
+        fState.fBounds.fLeft, fState.fBounds.centerY() - fKnobRadius, fState.fBounds.fRight,
+        fState.fBounds.centerY() + fKnobRadius);
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    p.fillRounded(fBounds, fTrackRadius, fTheme.fSurface, alpha);
-    p.fillRounded(skia::SkRect::MakeXYWH(fBounds.fLeft, fBounds.fTop,
-                                         fBounds.width() * fFraction,
-                                         fBounds.height()),
+    p.fillRounded(fState.fBounds, fTrackRadius, fTheme.fSurface, alpha);
+    p.fillRounded(skia::SkRect::MakeXYWH(fState.fBounds.fLeft, fState.fBounds.fTop,
+                                         fState.fBounds.width() * fFraction,
+                                         fState.fBounds.height()),
                   fTrackRadius, fTheme.fAccent, alpha);
-    p.circle(fBounds.fLeft + fBounds.width() * fFraction, fBounds.centerY(),
+    p.circle(fState.fBounds.fLeft + fState.fBounds.width() * fFraction, fState.fBounds.centerY(),
              fKnobRadius, fTheme.fText, alpha);
     if (this->focused()) {
       p.strokeRounded(this->reach(), fKnobRadius, fTheme.fAccent, 1.5f,
@@ -90,25 +88,25 @@ protected:
 
   // Without a setter it is a picture of a value and clicks fall through to
   // whatever is behind it.
-  bool acceptsInput() const override { return static_cast<bool>(fOnSet); }
-  bool focusChangesAppearance() const override {
-    return static_cast<bool>(fOnSet);
+  [[nodiscard]] bool acceptsInput() const { return skiff::scene::kActs<OnSet>; }
+  [[nodiscard]] bool focusChangesAppearance() const {
+    return skiff::scene::kActs<OnSet>;
   }
 
-  void onPointerEvent(skiff::scene::PointerEvent &event) override {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget || !fOnSet) {
+  void onPointerEvent(skiff::scene::PointerEvent &event) {
+    if (event.fPhase != skiff::scene::EventPhase::kTarget || !skiff::scene::kActs<OnSet>) {
       return;
     }
     if (event.fAction == skiff::scene::PointerAction::kDown &&
         this->reach().contains(event.fX, event.fY)) {
       fDragging = true;
-      fOnSet(this->fractionAt(event.fX));
+      std::invoke(fOnSet, this->fractionAt(event.fX));
       event.capturePointer();
       event.requestFocus();
       event.handle();
     } else if (event.fAction == skiff::scene::PointerAction::kMove &&
                fDragging) {
-      fOnSet(this->fractionAt(event.fX));
+      std::invoke(fOnSet, this->fractionAt(event.fX));
       event.handle();
     } else if ((event.fAction == skiff::scene::PointerAction::kUp ||
                 event.fAction == skiff::scene::PointerAction::kCancel) &&
@@ -119,7 +117,7 @@ protected:
     }
   }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kSlider;
     out.fValue = std::format("{:.3f}", fFraction);
@@ -130,54 +128,55 @@ protected:
     return out;
   }
 
-  void onSemanticAction(skiff::scene::SemanticActionEvent &event) override {
-    if (event.fAction == skiff::scene::SemanticAction::kIncrement && fOnSet) {
-      fOnSet(std::min(1.0f, fFraction + 0.05f));
+  void onSemanticAction(skiff::scene::SemanticActionEvent &event) {
+    if (event.fAction == skiff::scene::SemanticAction::kIncrement && skiff::scene::kActs<OnSet>) {
+      std::invoke(fOnSet, std::min(1.0f, fFraction + 0.05f));
       event.handle();
     } else if (event.fAction == skiff::scene::SemanticAction::kDecrement &&
-               fOnSet) {
-      fOnSet(std::max(0.0f, fFraction - 0.05f));
+               skiff::scene::kActs<OnSet>) {
+      std::invoke(fOnSet, std::max(0.0f, fFraction - 0.05f));
       event.handle();
     } else if (event.fAction == skiff::scene::SemanticAction::kSetValue &&
-               fOnSet) {
-      fOnSet(std::clamp(event.fValue, 0.0f, 1.0f));
+               skiff::scene::kActs<OnSet>) {
+      std::invoke(fOnSet, std::clamp(event.fValue, 0.0f, 1.0f));
       event.handle();
     } else {
-      Drawable::onSemanticAction(event);
+      skiff::scene::defaultSemanticAction(*this, event);
     }
   }
 
-  bool onClick(float x, float y) override {
-    if (!fOnSet || !this->reach().contains(x, y)) {
+  [[nodiscard]] bool onClick(float x, float y) {
+    if (!skiff::scene::kActs<OnSet> || !this->reach().contains(x, y)) {
       return false;
     }
-    if (fOnSet) {
-      fOnSet(this->fractionAt(x));
+    if (skiff::scene::kActs<OnSet>) {
+      std::invoke(fOnSet, this->fractionAt(x));
     }
     return true;
   }
 
 private:
+  [[no_unique_address]] OnSet fOnSet;
   float fFraction = 0.0f;
   bool fDragging = false;
 };
+SliderBar() -> SliderBar<>;
 
 // A track with two independently draggable ends. Values stay normalised so
 // the widget can represent difficulty, price, time or any other range without
 // knowing its units. It owns handle selection and pointer-to-track mapping;
 // the screen only forwards a continuing drag after the initial click.
-class RangeSlider : public skiff::scene::TypedDrawable<RangeSlider> {
+template <class OnSet = skiff::scene::NoAction>
+class RangeSlider : public skiff::scene::Node {
 public:
-  RangeSlider() {
-    fRelativeSizeAxes = Axes::kX;
-    fWidth = 1.0f;
+  explicit RangeSlider(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
+    fState.fRelativeSizeAxes = Axes::kX;
+    fState.fWidth = 1.0f;
     // The track is six pixels high, but a seven-pixel-radius knob is the
     // actual interaction target. Scene hit testing uses the drawable bounds,
     // so the bounds describe the whole control rather than only its track.
-    fHeight = 14.0f;
+    fState.fHeight = 14.0f;
   }
-
-  std::function<void(float, float)> fOnSet;
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -215,10 +214,10 @@ public:
   [[nodiscard]] bool dragging() const noexcept { return fDragging >= 0; }
 
   [[nodiscard]] float fractionAt(float x) const {
-    if (fBounds.width() <= 0.0f) {
+    if (fState.fBounds.width() <= 0.0f) {
       return fDragging == 0 ? fLow : fHigh;
     }
-    return std::clamp((x - fBounds.fLeft) / fBounds.width(), 0.0f, 1.0f);
+    return std::clamp((x - fState.fBounds.fLeft) / fState.fBounds.width(), 0.0f, 1.0f);
   }
 
   void dragTo(float x) {
@@ -236,23 +235,23 @@ public:
 
   void endDrag() noexcept { fDragging = -1; }
 
-protected:
+public:
   Theme fTheme = theme();
   float fKnobRadius = 7.0f;
   float fTrackHeight = 6.0f;
   float fTrackRadius = 3.0f;
   float fMinSpan = 0.0f;
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    const float trackHeight = std::min(fTrackHeight, fBounds.height());
+    const float trackHeight = std::min(fTrackHeight, fState.fBounds.height());
     const skia::SkRect track = skia::SkRect::MakeXYWH(
-        fBounds.fLeft, fBounds.centerY() - trackHeight * 0.5f,
-        fBounds.width(), trackHeight);
+        fState.fBounds.fLeft, fState.fBounds.centerY() - trackHeight * 0.5f,
+        fState.fBounds.width(), trackHeight);
     p.fillRounded(track, fTrackRadius, fTheme.fSurface, alpha);
     p.fillRounded(
         skia::SkRect::MakeLTRB(track.fLeft + track.width() * fLow,
@@ -265,21 +264,21 @@ protected:
     p.circle(track.fLeft + track.width() * fHigh, track.centerY(),
              fKnobRadius, fTheme.fText, alpha);
     if (this->focused()) {
-      p.strokeRounded(fBounds, fKnobRadius, fTheme.fAccent, 1.5f, alpha);
+      p.strokeRounded(fState.fBounds, fKnobRadius, fTheme.fAccent, 1.5f, alpha);
     }
   }
 
-  bool acceptsInput() const override { return static_cast<bool>(fOnSet); }
-  bool focusChangesAppearance() const override {
-    return static_cast<bool>(fOnSet);
+  [[nodiscard]] bool acceptsInput() const { return skiff::scene::kActs<OnSet>; }
+  [[nodiscard]] bool focusChangesAppearance() const {
+    return skiff::scene::kActs<OnSet>;
   }
 
-  void onPointerEvent(skiff::scene::PointerEvent &event) override {
-    if (event.fPhase != skiff::scene::EventPhase::kTarget || !fOnSet) {
+  void onPointerEvent(skiff::scene::PointerEvent &event) {
+    if (event.fPhase != skiff::scene::EventPhase::kTarget || !skiff::scene::kActs<OnSet>) {
       return;
     }
     if (event.fAction == skiff::scene::PointerAction::kDown &&
-        fBounds.contains(event.fX, event.fY)) {
+        fState.fBounds.contains(event.fX, event.fY)) {
       this->onClick(event.fX, event.fY);
       event.capturePointer();
       event.requestFocus();
@@ -297,7 +296,7 @@ protected:
     }
   }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kSlider;
     out.fValue = std::format("{:.3f}–{:.3f}", fLow, fHigh);
@@ -305,8 +304,8 @@ protected:
     return out;
   }
 
-  bool onClick(float x, float) override {
-    if (!fOnSet) {
+  [[nodiscard]] bool onClick(float x, float) {
+    if (!skiff::scene::kActs<OnSet>) {
       return false;
     }
     const float at = this->fractionAt(x);
@@ -325,26 +324,27 @@ private:
     fLow = low;
     fHigh = high;
     this->markDamaged();
-    if (fOnSet) {
-      fOnSet(fLow, fHigh);
+    if (skiff::scene::kActs<OnSet>) {
+      std::invoke(fOnSet, fLow, fHigh);
     }
   }
 
+  [[no_unique_address]] OnSet fOnSet;
   float fLow = 0.0f;
   float fHigh = 1.0f;
   int fDragging = -1;
 };
+RangeSlider() -> RangeSlider<>;
 
 // A pill that slides its knob from one end to the other. The state is set
 // from outside; what is animated here is only the knob catching up with it.
-class Toggle : public skiff::scene::TypedDrawable<Toggle> {
+template <class OnToggle = skiff::scene::NoAction>
+class Toggle : public skiff::scene::Node {
 public:
-  Toggle() {
-    fWidth = 40.0f;
-    fHeight = 22.0f;
+  explicit Toggle(OnToggle onToggle = {}) : fOnToggle(std::move(onToggle)) {
+    fState.fWidth = 40.0f;
+    fState.fHeight = 22.0f;
   }
-
-  std::function<void()> fOnToggle;
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -360,17 +360,17 @@ public:
   }
   [[nodiscard]] bool on() const noexcept { return fOn; }
 
-protected:
+public:
   Theme fTheme = theme();
   float fKnobRadius = 8.0f;
   float fKnobInset = 11.0f;
   float fTauMs = 60.0f;
 
-  bool settling() const override {
+  [[nodiscard]] bool settling() const {
     return !skiff::paint::settled(fKnob, fOn ? 1.0f : 0.0f);
   }
 
-  void update(double nowMs) override {
+  void update(double nowMs) {
     const double dt = fLastMs > 0.0 ? nowMs - fLastMs : 16.0;
     fLastMs = nowMs;
     const float previous = fKnob;
@@ -380,29 +380,29 @@ protected:
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) override {
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    p.fillRounded(fBounds, fBounds.height() * 0.5f,
+    p.fillRounded(fState.fBounds, fState.fBounds.height() * 0.5f,
                   mix(fTheme.fSurface, fTheme.fAccent, fKnob), alpha);
-    p.circle(fBounds.fLeft + fKnobInset +
-                 (fBounds.width() - fKnobInset * 2.0f) * fKnob,
-             fBounds.centerY(), fKnobRadius, fTheme.fText, alpha);
+    p.circle(fState.fBounds.fLeft + fKnobInset +
+                 (fState.fBounds.width() - fKnobInset * 2.0f) * fKnob,
+             fState.fBounds.centerY(), fKnobRadius, fTheme.fText, alpha);
     if (this->focused()) {
-      p.strokeRounded(fBounds, fBounds.height() * 0.5f, fTheme.fAccent, 1.5f,
+      p.strokeRounded(fState.fBounds, fState.fBounds.height() * 0.5f, fTheme.fAccent, 1.5f,
                       alpha);
     }
   }
 
-  bool acceptsInput() const override { return static_cast<bool>(fOnToggle); }
-  bool focusChangesAppearance() const override {
-    return static_cast<bool>(fOnToggle);
+  [[nodiscard]] bool acceptsInput() const { return skiff::scene::kActs<OnToggle>; }
+  [[nodiscard]] bool focusChangesAppearance() const {
+    return skiff::scene::kActs<OnToggle>;
   }
 
-  [[nodiscard]] skiff::scene::Semantics semantics() const override {
+  [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kToggle;
     out.fValue = fOn ? "on" : "off";
@@ -411,11 +411,11 @@ protected:
     return out;
   }
 
-  bool onClick(float, float) override {
-    if (!fOnToggle) {
+  [[nodiscard]] bool onClick(float, float) {
+    if (!skiff::scene::kActs<OnToggle>) {
       return false;
     }
-    fOnToggle();
+    std::invoke(fOnToggle);
     return true;
   }
 
@@ -433,9 +433,11 @@ private:
                               channel(a & 0xffu, b & 0xffu));
   }
 
+  [[no_unique_address]] OnToggle fOnToggle;
   bool fOn = false;
   float fKnob = 0.0f;
   double fLastMs = 0.0;
 };
+Toggle() -> Toggle<>;
 
 } // namespace skiff::widgets
