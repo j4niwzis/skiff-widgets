@@ -24,6 +24,7 @@ public:
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     fState.fHeight = fTheme.fRowHeight;
+    fState.setCursor(skiff::scene::cursor::text{});
   }
 
   void setTheme(Theme value) {

@@ -19,6 +19,7 @@ public:
   explicit TextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
       : fPlaceholder(std::move(placeholder)), fOnSubmit(std::move(onSubmit)) {
     fState.fHeight = this->heightFor(1);
+    fState.setCursor(skiff::scene::cursor::text{});
   }
 
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
