@@ -12,6 +12,7 @@ export module skiff.widgets;
 
 export import skiff.widgets.theme;
 export import skiff.widgets.textbox;
+export import skiff.widgets.textarea;
 export import skiff.widgets.button;
 export import skiff.widgets.tabbar;
 export import skiff.widgets.dropdown;

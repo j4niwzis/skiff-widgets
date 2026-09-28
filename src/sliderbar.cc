@@ -374,6 +374,13 @@ public:
     this->markDamaged();
   }
 
+  // On or off there and then, the knob already where it goes: for the
+  // state a screen opens in, where setOn() would show it sliding.
+  void setOnNow(bool on) {
+    fOn = on;
+    fKnob = on ? 1.0f : 0.0f;
+    this->markDamaged();
+  }
   void setOn(bool on) {
     if (on == fOn) {
       return;
