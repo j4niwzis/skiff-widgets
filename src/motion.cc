@@ -205,8 +205,14 @@ private:
 template <class Base, class Content>
 class Drawer : public skiff::scene::Node {
 public:
-  Drawer(Base base, Content content)
-      : fBase(std::move(base)), fContent(std::move(content)) {
+  // The base and the panel, each made in place from its own arguments:
+  // Drawer(std::piecewise_construct, std::forward_as_tuple(...),
+  // std::forward_as_tuple(...)).
+  template <class... BaseArgs, class... ContentArgs>
+  Drawer(std::piecewise_construct_t, std::tuple<BaseArgs...> base,
+         std::tuple<ContentArgs...> content)
+      : fBase(std::make_from_tuple<Base>(std::move(base))),
+        fContent(std::make_from_tuple<Content>(std::move(content))) {
     fState.apply({.fill = true});
     fScrim.setVisible(false);
     fSheet.setVisible(false);
