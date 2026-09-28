@@ -87,99 +87,35 @@ private:
   float fUsedHeight = 0.0f;
 };
 
-// A base, and over it a panel that slides in from the right and covers it,
-// and slides back out when closed -- a drawer, a settings page, a detail
-// view, in the one window. The panel sits on a sheet of its own colour, so
-// the base does not show through it.
-//
-// A closed panel is destroyed by dropClosed(), which the program calls
-// between events once the slide is over: never inside the panel's own
-// handlers. It is a sweeping movement: below skiff::paint::motion::full it
-// comes and goes at once.
-template <class Base, class Over>
-class SlideOver : public skiff::scene::Node {
+// One panel of a SlideOver, on a sheet of its own: it takes every press on
+// it, so nothing under it can be reached through it.
+template <class Over> class SlideLayer : public skiff::scene::Node {
 public:
   template <class... Args>
-  explicit SlideOver(Args &&...args) : fBase(std::forward<Args>(args)...) {
+  explicit SlideLayer(skia::SkColor sheet, Args &&...args)
+      : fOver(std::forward<Args>(args)...) {
     fState.apply({.fill = true});
-    fSheet.setVisible(false);
-  }
-
-  [[nodiscard]] Base &base() noexcept { return fBase; }
-  // The panel that is up, not on its way out.
-  [[nodiscard]] Over *shown() noexcept {
-    return fOver && !fClosing ? &*fOver : nullptr;
-  }
-  [[nodiscard]] const Over *shown() const noexcept {
-    return fOver && !fClosing ? &*fOver : nullptr;
-  }
-
-  void setSheetColour(skia::SkColor colour) { fSheet.setColour(colour); }
-
-  // A panel made from `args`: it slides in, unless one is up already, which
-  // it replaces where it is.
-  template <class... Args> Over &open(Args &&...args) {
-    const bool up = this->shown() != nullptr;
-    fOver.emplace(std::forward<Args>(args)...);
-    fClosing = false;
-    if (!up) {
-      fSlide.jump(0.0f);
-    }
-    fSlide.setTarget(1.0f);
-    fSheet.setVisible(true);
-    this->invalidateLayout();
-    return *fOver;
-  }
-  // The panel on its way out.
-  void close() {
-    if (!fOver) {
-      return;
-    }
-    fClosing = true;
-    fSlide.setTarget(0.0f);
-    this->invalidateLayout();
-  }
-  // A panel that has slid all the way out, destroyed.
-  void dropClosed() {
-    if (fOver && fClosing && !fSlide.moving()) {
-      fOver.reset();
-      fClosing = false;
-      fSheet.setVisible(false);
-      this->invalidateLayout();
-    }
+    fSheet.setColour(sheet);
   }
 
   void forEachChild(auto &&f) {
-    f(fBase);
     f(fSheet);
     f(fOver);
   }
-
-  [[nodiscard]] bool settling() const { return fSlide.moving(); }
-  void update(double nowMs) {
-    if (fSlide.step(nowMs)) {
-      this->invalidateLayout();
-    }
-  }
-
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fBase.fState.arrange(0.0f, 0.0f);
-    skiff::scene::layout(fBase, box);
-    if (!fOver) {
-      return;
-    }
-    const skia::SkRect over = skia::SkRect::MakeXYWH(
-        box.fLeft + box.width() * (1.0f - fSlide.value()), box.fTop,
-        box.width(), box.height());
-    fSheet.apply({.width = over.width(), .height = over.height()});
+    fSheet.apply({.width = box.width(), .height = box.height()});
     fSheet.fState.arrange(0.0f, 0.0f);
-    skiff::scene::layout(fSheet, over);
-    this->layOut(*fOver, over);
+    skiff::scene::layout(fSheet, box);
+    layOut(fOver, box);
   }
+  [[nodiscard]] bool acceptsInput() const { return true; }
+
+  Over fOver;
+  skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
+  bool fClosing = false;
 
 private:
-  // The panel itself, or whichever panel a variant holds.
   template <class T> static void layOut(T &panel, const skia::SkRect &area) {
     panel.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(panel, area);
@@ -189,11 +125,128 @@ private:
     std::visit([&](auto &one) { layOut(one, area); }, panel);
   }
 
-  Base fBase;
   skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
-  std::optional<Over> fOver;
-  skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
-  bool fClosing = false;
+};
+
+// A base, and over it a stack of panels, each sliding in from the right over
+// what is under it and back out when it goes -- a settings page, a detail
+// view, a page opened from a page, in the one window. Each panel sits on a
+// sheet of its own colour and takes every press on it.
+//
+// Panels that have gone are destroyed by dropClosed(), which the program
+// calls between events once they have slid out: never inside a panel's own
+// handlers. It is a sweeping movement: below skiff::paint::motion::full the
+// panels come and go at once.
+template <class Base, class Over>
+class SlideOver : public skiff::scene::Node {
+public:
+  template <class... Args>
+  explicit SlideOver(Args &&...args) : fBase(std::forward<Args>(args)...) {
+    fState.apply({.fill = true});
+  }
+
+  [[nodiscard]] Base &base() noexcept { return fBase; }
+  // The panel on top, of those not on their way out.
+  [[nodiscard]] Over *shown() noexcept {
+    for (auto it = fLayers.rbegin(); it != fLayers.rend(); ++it) {
+      if (!it->fClosing) {
+        return &it->fOver;
+      }
+    }
+    return nullptr;
+  }
+
+  void setSheetColour(skia::SkColor colour) { fSheetColour = colour; }
+
+  // A panel made from `args`, sliding in over the top one.
+  template <class... Args> Over &open(Args &&...args) {
+    SlideLayer<Over> &made =
+        fLayers.emplace_back(fSheetColour, std::forward<Args>(args)...);
+    made.fSlide.jump(0.0f);
+    made.fSlide.setTarget(1.0f);
+    this->invalidateLayout();
+    return made.fOver;
+  }
+  // The top panel slides out, and the one under it is up again.
+  void back() {
+    for (auto it = fLayers.rbegin(); it != fLayers.rend(); ++it) {
+      if (!it->fClosing) {
+        it->fClosing = true;
+        it->fSlide.setTarget(0.0f);
+        break;
+      }
+    }
+    this->invalidateLayout();
+  }
+  // Every panel goes: the top one slides out over the base, the ones under
+  // it at once.
+  void close() {
+    bool top = true;
+    for (auto it = fLayers.rbegin(); it != fLayers.rend(); ++it) {
+      if (it->fClosing) {
+        continue;
+      }
+      it->fClosing = true;
+      if (top) {
+        it->fSlide.setTarget(0.0f);
+        top = false;
+      } else {
+        it->fSlide.jump(0.0f);
+      }
+    }
+    this->invalidateLayout();
+  }
+  // The panels that have slid all the way out, destroyed.
+  void dropClosed() {
+    bool dropped = false;
+    while (!fLayers.empty() && fLayers.back().fClosing &&
+           !fLayers.back().fSlide.moving()) {
+      fLayers.pop_back();
+      dropped = true;
+    }
+    if (dropped) {
+      this->invalidateLayout();
+    }
+  }
+
+  void forEachChild(auto &&f) {
+    f(fBase);
+    f(fLayers);
+  }
+
+  [[nodiscard]] bool settling() const {
+    return std::ranges::any_of(fLayers, [](const SlideLayer<Over> &layer) {
+      return layer.fSlide.moving();
+    });
+  }
+  void update(double nowMs) {
+    bool moved = false;
+    for (SlideLayer<Over> &layer : fLayers) {
+      moved = layer.fSlide.step(nowMs) || moved;
+    }
+    if (moved) {
+      this->invalidateLayout();
+    }
+  }
+
+  void layoutChildren() {
+    const skia::SkRect box = fState.contentBox();
+    fBase.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fBase, box);
+    for (SlideLayer<Over> &layer : fLayers) {
+      const float value = layer.fSlide.value();
+      layer.setVisible(value > 0.0f);
+      skiff::scene::layout(
+          layer, skia::SkRect::MakeXYWH(box.fLeft + box.width() * (1.0f - value),
+                                        box.fTop, box.width(), box.height()));
+    }
+  }
+
+private:
+  Base fBase;
+  // A deque: a panel is made in place and never moved.
+  std::deque<SlideLayer<Over>> fLayers;
+  skia::SkColor fSheetColour = skia::colorSetARGB(255, 0, 0, 0);
 };
 
 // A navigation drawer: a panel pulled out from the left edge over a base,
