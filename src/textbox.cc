@@ -41,6 +41,15 @@ public:
       this->markDamaged();
     }
   }
+  // A password: each character drawn as a dot, and the value kept from
+  // assistive technology, which would otherwise read it aloud.
+  void setMasked(bool masked) {
+    if (masked != fMasked) {
+      fMasked = masked;
+      this->markDamaged();
+    }
+  }
+  [[nodiscard]] bool masked() const noexcept { return fMasked; }
   void setTrailingInset(float inset) {
     if (inset != fTrailingInset) {
       fTrailingInset = inset;
@@ -75,6 +84,7 @@ protected:
   Theme fTheme = theme();
   std::string fPlaceholder;
   bool fSearchIcon = false; // the magnifier lazer puts in its search boxes
+  bool fMasked = false;
   // Space owned by a trailing status, clear button or other overlay.
   float fTrailingInset = 0.0f;
 
@@ -162,7 +172,9 @@ protected:
     skiff::scene::Semantics out;
     out.fRole = skiff::scene::SemanticRole::kTextBox;
     out.fLabel = fPlaceholder;
-    out.fValue = fText;
+    if (!fMasked) {
+      out.fValue = fText;
+    }
     out.fActions = {skiff::scene::SemanticAction::kFocus,
                     skiff::scene::SemanticAction::kSetValue};
     return out;
@@ -212,8 +224,8 @@ protected:
     const float baseline = p.middleBaseline(fBounds, fTheme.fFontSize);
     const float room = std::max(
         0.0f, fBounds.fRight - textLeft - fTheme.fPaddingX - fTrailingInset);
-    const std::string shown = fText.substr(0, fCaret) + fComposition +
-                              fText.substr(fCaret);
+    const std::string beforeCaret = shownAs(fText.substr(0, fCaret) + fComposition);
+    const std::string shown = beforeCaret + shownAs(fText.substr(fCaret));
     if (shown.empty()) {
       p.text(fPlaceholder, textLeft, baseline, fTheme.fFontSize,
              fTheme.fTextFaint, alpha * 0.6f);
@@ -225,8 +237,7 @@ protected:
       const float cx =
           textLeft +
           std::min(room,
-                   p.measure(fText.substr(0, fCaret) + fComposition,
-                             fTheme.fFontSize)) +
+                   p.measure(beforeCaret, fTheme.fFontSize)) +
           2.0f;
       p.fillRect(skia::SkRect::MakeXYWH(cx, fBounds.centerY() - 9.0f, 1.5f,
                                         fTheme.fFontSize + 2.0f),
@@ -235,6 +246,18 @@ protected:
   }
 
 private:
+  // What is drawn for some of the text: itself, or a dot per character.
+  [[nodiscard]] std::string shownAs(std::string_view text) const {
+    if (!fMasked) {
+      return std::string(text);
+    }
+    std::string out;
+    for (std::size_t at = 0; at < text.size(); at = nextCodepoint(text, at)) {
+      out += "\u2022";
+    }
+    return out;
+  }
+
   [[nodiscard]] static std::size_t previousCodepoint(std::string_view text,
                                                       std::size_t from) {
     if (from == 0) {
