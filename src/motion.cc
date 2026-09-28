@@ -321,4 +321,141 @@ private:
   bool fOpen = false;
 };
 
+// A box in the middle of the window over a dimmed background, as a settings
+// or confirmation dialog: it fades in, and a press off it or Esc from inside
+// it fades it out. It is a layer of its own -- it fills its parent and goes
+// last among the parent's children -- and holds nothing while shut. The
+// program destroys a shut one with dropClosed(), between events. It is a
+// subtle movement: at skiff::paint::motion::none it comes and goes at once.
+template <class Content>
+class Dialog : public skiff::scene::Node {
+public:
+  Dialog() {
+    fState.apply({.fill = true});
+    fScrim.setVisible(false);
+    fSheet.setVisible(false);
+    fSheet.apply({.cornerRadius = 12.0f});
+  }
+
+  void setSheetColour(skia::SkColor colour) { fSheet.setColour(colour); }
+  // How big the box is at most; never more than most of the window.
+  void setSize(float width, float height) {
+    fWidth = width;
+    fHeight = height;
+    this->invalidateLayout();
+  }
+
+  // The content up, not on its way out.
+  [[nodiscard]] Content *shown() noexcept {
+    return fContent && !fClosing ? &*fContent : nullptr;
+  }
+
+  // Content made from `args`, in place of any that is up.
+  template <class... Args> Content &open(Args &&...args) {
+    const bool up = this->shown() != nullptr;
+    fContent.emplace(std::forward<Args>(args)...);
+    fClosing = false;
+    if (!up) {
+      fFade.jump(0.0f);
+    }
+    fFade.setTarget(1.0f);
+    this->showFade();
+    this->invalidateLayout();
+    return *fContent;
+  }
+  void close() {
+    if (!fContent) {
+      return;
+    }
+    fClosing = true;
+    fFade.setTarget(0.0f);
+    this->showFade();
+  }
+  void dropClosed() {
+    if (fContent && fClosing && !fFade.moving()) {
+      fContent.reset();
+      fClosing = false;
+      fScrim.setVisible(false);
+      fSheet.setVisible(false);
+      this->invalidateLayout();
+    }
+  }
+
+  void forEachChild(auto &&f) {
+    f(fScrim);
+    f(fSheet);
+    f(fContent);
+  }
+
+  [[nodiscard]] bool settling() const { return fFade.moving(); }
+  void update(double nowMs) {
+    if (fFade.step(nowMs)) {
+      this->showFade();
+    }
+  }
+
+  void layoutChildren() {
+    if (!fContent) {
+      return;
+    }
+    const skia::SkRect box = fState.contentBox();
+    fScrim.apply({.width = box.width(), .height = box.height()});
+    fScrim.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fScrim, box);
+    const float width = std::min(fWidth, box.width() * 0.92f);
+    const float height = std::min(fHeight, box.height() * 0.9f);
+    const skia::SkRect area = skia::SkRect::MakeXYWH(
+        box.centerX() - width * 0.5f, box.centerY() - height * 0.5f, width, height);
+    fSheet.apply({.width = width, .height = height});
+    fSheet.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fSheet, area);
+    fContent->fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(*fContent, area);
+  }
+
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
+                 skiff::scene::PointerReply &reply) {
+    if (this->shown() != nullptr && reply.fTarget == fScrim.id()) {
+      this->close();
+      reply.handle();
+    }
+  }
+  using Node::onKey;
+  void onKey(skiff::scene::phase::bubble, const skiff::scene::key::down &press,
+             skiff::scene::Reply &reply) {
+    if (this->shown() != nullptr && press.key == skiff::scene::keys::kEscape) {
+      this->close();
+      reply.handle();
+    }
+  }
+
+private:
+  class Scrim : public skiff::nodes::Box<> {
+  public:
+    Scrim() : skiff::nodes::Box<>(skia::colorSetARGB(115, 0, 0, 0)) {}
+    [[nodiscard]] bool acceptsInput() const { return true; }
+  };
+
+  void showFade() {
+    const bool shown = fContent.has_value();
+    fScrim.setVisible(shown);
+    fSheet.setVisible(shown);
+    const float value = fFade.value();
+    fScrim.fState.setAlpha(value);
+    fSheet.fState.setAlpha(value);
+    if (fContent) {
+      fContent->fState.setAlpha(value);
+    }
+  }
+
+  Scrim fScrim;
+  skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
+  std::optional<Content> fContent;
+  skiff::paint::Tween fFade{0.0f, 160.0f, skiff::paint::movement::subtle{}};
+  float fWidth = 420.0f;
+  float fHeight = 560.0f;
+  bool fClosing = false;
+};
+
 } // namespace skiff::widgets
