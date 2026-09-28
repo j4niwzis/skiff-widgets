@@ -17,3 +17,4 @@ export import skiff.widgets.tabbar;
 export import skiff.widgets.dropdown;
 export import skiff.widgets.sliderbar;
 export import skiff.widgets.motion;
+export import skiff.widgets.menu;
