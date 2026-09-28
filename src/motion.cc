@@ -196,4 +196,123 @@ private:
   bool fClosing = false;
 };
 
+// A navigation drawer: a panel pulled out from the left edge over a base,
+// with the rest of the base dimmed under a scrim. A click on the scrim, or
+// Esc from inside the panel, pushes it back. The panel is there all along --
+// hidden while pushed in, so nothing in it takes focus -- and draws on a
+// sheet of its own colour. It is a sweeping movement: below
+// skiff::paint::motion::full it comes and goes at once.
+template <class Base, class Content>
+class Drawer : public skiff::scene::Node {
+public:
+  Drawer(Base base, Content content)
+      : fBase(std::move(base)), fContent(std::move(content)) {
+    fState.apply({.fill = true});
+    fScrim.setVisible(false);
+    fSheet.setVisible(false);
+    fContent.setVisible(false);
+  }
+
+  [[nodiscard]] Base &base() noexcept { return fBase; }
+  [[nodiscard]] Content &content() noexcept { return fContent; }
+  [[nodiscard]] bool isOpen() const noexcept { return fOpen; }
+
+  void setSheetColour(skia::SkColor colour) { fSheet.setColour(colour); }
+  // How wide the panel is at most; never more than most of the window.
+  void setWidth(float width) {
+    fWidth = width;
+    this->invalidateLayout();
+  }
+
+  void open() { this->setOpen(true); }
+  void close() { this->setOpen(false); }
+  void setOpen(bool open) {
+    fOpen = open;
+    fSlide.setTarget(open ? 1.0f : 0.0f);
+    this->showWhatMoves();
+    this->invalidateLayout();
+  }
+
+  void forEachChild(auto &&f) {
+    f(fBase);
+    f(fScrim);
+    f(fSheet);
+    f(fContent);
+  }
+
+  [[nodiscard]] bool settling() const { return fSlide.moving(); }
+  void update(double nowMs) {
+    if (fSlide.step(nowMs)) {
+      this->showWhatMoves();
+      this->invalidateLayout();
+    }
+  }
+
+  void layoutChildren() {
+    const skia::SkRect box = fState.contentBox();
+    fBase.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fBase, box);
+    if (!fContent.visible()) {
+      return;
+    }
+    const float value = fSlide.value();
+    fScrim.setColour(skia::colorSetARGB(static_cast<unsigned>(110.0f * value), 0, 0, 0));
+    fScrim.apply({.width = box.width(), .height = box.height()});
+    fScrim.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fScrim, box);
+    const float width = std::min(fWidth, box.width() * 0.85f);
+    const skia::SkRect panel = skia::SkRect::MakeXYWH(
+        box.fLeft - width * (1.0f - value), box.fTop, width, box.height());
+    fSheet.apply({.width = width, .height = box.height()});
+    fSheet.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fSheet, panel);
+    fContent.fState.arrange(0.0f, 0.0f);
+    skiff::scene::layout(fContent, panel);
+  }
+
+  // A press on the scrim pushes the panel back.
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
+                 skiff::scene::PointerReply &reply) {
+    if (fOpen && reply.fTarget == fScrim.id()) {
+      this->close();
+      reply.handle();
+    }
+  }
+  using Node::onKey;
+  void onKey(skiff::scene::phase::bubble, const skiff::scene::key::down &press,
+             skiff::scene::Reply &reply) {
+    if (fOpen && press.key == skiff::scene::keys::kEscape) {
+      this->close();
+      reply.handle();
+    }
+  }
+
+private:
+  // What covers the base: it takes the pointer, so a press off the panel
+  // closes it rather than reaching what is under it.
+  class Scrim : public skiff::nodes::Box<> {
+  public:
+    Scrim() : skiff::nodes::Box<>(skia::colorSetARGB(0, 0, 0, 0)) {}
+    [[nodiscard]] bool acceptsInput() const { return true; }
+  };
+
+  // Shown while the panel is out or moving; hidden once it is all the way
+  // in.
+  void showWhatMoves() {
+    const bool shown = fOpen || fSlide.moving();
+    fScrim.setVisible(shown);
+    fSheet.setVisible(shown);
+    fContent.setVisible(shown);
+  }
+
+  Base fBase;
+  Scrim fScrim;
+  skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
+  Content fContent;
+  skiff::paint::Eased fSlide{0.0f, 60.0f, skiff::paint::movement::sweeping{}};
+  float fWidth = 300.0f;
+  bool fOpen = false;
+};
+
 } // namespace skiff::widgets
