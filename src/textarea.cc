@@ -94,6 +94,17 @@ public:
 
   // A press puts the caret, and a drag from it selects.
   using Node::onPointer;
+  // Past its lines, the wheel scrolls it: three lines a notch, as a
+  // scroll view's 60 pixels. At an end, the wheel goes on to what holds it.
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::scroll &wheel,
+                 skiff::scene::PointerReply &reply) {
+    const int before = this->firstShown();
+    fFirst = before - static_cast<int>(std::lround(wheel.dy * 3.0f));
+    if (this->firstShown() != before) {
+      this->markDamaged();
+      reply.handle();
+    }
+  }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &at,
                  skiff::scene::PointerReply &reply) {
     fCaret = this->offsetAt(at.x, at.y);
@@ -398,11 +409,19 @@ private:
     }
     return at;
   }
+  // The first line in view: where the wheel left it, while the caret stays
+  // where it was; when the caret moves, as little further as brings it in.
   [[nodiscard]] int firstShown() const {
     if (fLines.empty()) {
       return 0;
     }
-    return std::max(0, static_cast<int>(this->lineOf(fCaret)) - fMaxLines + 1);
+    if (fCaret != fShownFor) {
+      const int caret = static_cast<int>(this->lineOf(fCaret));
+      fFirst = std::clamp(fFirst, caret - fMaxLines + 1, caret);
+      fShownFor = fCaret;
+    }
+    fFirst = std::clamp(fFirst, 0, std::max(0, static_cast<int>(fLines.size()) - fMaxLines));
+    return fFirst;
   }
   [[nodiscard]] std::size_t offsetAt(float x, float y) const {
     if (fLines.empty()) {
@@ -515,6 +534,10 @@ private:
   bool fDragging = false;
   std::vector<Line> fLines;
   std::size_t fCaret = 0;
+  // What firstShown() keeps: the first line in view, and the caret it was
+  // for -- kept as the view is drawn, so mutable.
+  mutable int fFirst = 0;
+  mutable std::size_t fShownFor = 0;
   std::size_t fAnchor = 0;
   bool fCaretShown = false;
   double fCaretSinceMs = 0.0;
