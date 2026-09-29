@@ -20,3 +20,4 @@ export import skiff.widgets.sliderbar;
 export import skiff.widgets.motion;
 export import skiff.widgets.menu;
 export import skiff.widgets.avatar;
+export import skiff.widgets.pill;
