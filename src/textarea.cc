@@ -5,6 +5,11 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 export import skiff.widgets.theme;
+// With skiff's shaping, the caret steps over whole characters (UAX #29): an
+// emoji sequence or a letter with its marks is one step and one Backspace.
+#ifdef SKIFF_TEXT_SHAPING
+import alef.grapheme;
+#endif
 
 export namespace skiff::widgets {
 
@@ -439,6 +444,10 @@ private:
     if (at == 0) {
       return 0;
     }
+#ifdef SKIFF_TEXT_SHAPING
+    return static_cast<std::size_t>(
+        alef::prev_grapheme_boundary(text.begin(), text.begin() + static_cast<std::ptrdiff_t>(at)) - text.begin());
+#endif
     --at;
     while (at > 0 && (static_cast<unsigned char>(text[at]) & 0xC0u) == 0x80u) {
       --at;
@@ -449,6 +458,10 @@ private:
     if (at >= text.size()) {
       return text.size();
     }
+#ifdef SKIFF_TEXT_SHAPING
+    return static_cast<std::size_t>(
+        alef::next_grapheme_boundary(text.begin() + static_cast<std::ptrdiff_t>(at), text.end()) - text.begin());
+#endif
     ++at;
     while (at < text.size() && (static_cast<unsigned char>(text[at]) & 0xC0u) == 0x80u) {
       ++at;
