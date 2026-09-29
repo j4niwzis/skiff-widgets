@@ -132,6 +132,12 @@ private:
   static void layOut(std::variant<Ts...> &panel, const skia::SkRect &area) {
     std::visit([&](auto &one) { layOut(one, area); }, panel);
   }
+  // A program's own variant, visited as C++26's is.
+  template <class V>
+    requires skiff::scene::one_of_several<V>
+  static void layOut(V &panel, const skia::SkRect &area) {
+    panel.visit([&](auto &one) { layOut(one, area); });
+  }
 
   Sheet fSheet{skia::colorSetARGB(255, 0, 0, 0)};
 };
