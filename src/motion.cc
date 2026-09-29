@@ -8,6 +8,14 @@ import skiff.nodes;
 
 export namespace skiff::widgets {
 
+// A plate a panel is drawn on: it takes every press on it, so that a press
+// on an empty part of the panel does not go through to what is under it.
+class Sheet : public skiff::nodes::Box<> {
+public:
+  explicit Sheet(skia::SkColor colour) : skiff::nodes::Box<>(colour) {}
+  [[nodiscard]] bool acceptsInput() const { return true; }
+};
+
 // A child that folds open and shut: its height eases between none and the
 // child's own, and what does not fit yet is clipped. Shut, the child is
 // hidden, so nothing in it takes focus. It is a subtle movement: at
@@ -125,7 +133,7 @@ private:
     std::visit([&](auto &one) { layOut(one, area); }, panel);
   }
 
-  skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
+  Sheet fSheet{skia::colorSetARGB(255, 0, 0, 0)};
 };
 
 // A base, and over it a stack of panels, each sliding in from the right over
@@ -375,7 +383,7 @@ private:
 
   Base fBase;
   Scrim fScrim;
-  skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
+  Sheet fSheet{skia::colorSetARGB(255, 0, 0, 0)};
   Content fContent;
   skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
   float fWidth = 300.0f;
@@ -511,7 +519,7 @@ private:
   }
 
   Scrim fScrim;
-  skiff::nodes::Box<> fSheet{skia::colorSetARGB(255, 0, 0, 0)};
+  Sheet fSheet{skia::colorSetARGB(255, 0, 0, 0)};
   std::optional<Content> fContent;
   skiff::paint::Tween fFade{0.0f, 160.0f, skiff::paint::movement::subtle{}};
   float fWidth = 420.0f;
