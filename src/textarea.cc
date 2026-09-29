@@ -36,6 +36,9 @@ public:
   }
 
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
+  // Text put in at the caret, over what is selected, as if typed: what a
+  // picker gives the field (an emoji, say).
+  void insertText(std::string text) { this->insert(std::move(text)); }
   void setText(std::string text) {
     fText = std::move(text);
     fCaret = fAnchor = fText.size();
