@@ -76,6 +76,8 @@ public:
   }
 
   [[nodiscard]] bool acceptsInput() const { return true; }
+  // A text field is what a press gives the focus to.
+  [[nodiscard]] bool takesFocusOnPress() const { return true; }
   [[nodiscard]] bool settling() const { return this->focused(); }
   void update(double nowMs) {
     fNowMs = nowMs;
@@ -152,11 +154,14 @@ public:
       fAnchor = 0;
       fCaret = fText.size();
     } else if (control && (press.key == keys::kC || press.key == keys::kX)) {
-      if (this->hasSelection() && !fMasked) {
-        skiff::scene::setClipboardText(this->selected());
-        if (press.key == keys::kX) {
-          this->erase(this->low(), this->high());
-        }
+      // Nothing selected here: not this field's to take -- the window may
+      // copy what is selected elsewhere.
+      if (!this->hasSelection() || fMasked) {
+        return;
+      }
+      skiff::scene::setClipboardText(this->selected());
+      if (press.key == keys::kX) {
+        this->erase(this->low(), this->high());
       }
     } else if (control && press.key == keys::kV) {
       std::string pasted = skiff::scene::clipboardText();
@@ -193,10 +198,17 @@ public:
     } else if (press.key == keys::kEnd) {
       move(control || fLines.empty() ? fText.size() : fLines[this->lineOf(fCaret)].fEnd);
     } else if (press.key == keys::kUp || press.key == keys::kDown) {
-      if (fSingle) {
+      // With Ctrl, or past the first or the last line: not the field's --
+      // the window's, as a chat's input gives Up to editing the last message
+      // and Ctrl+Up to answering one.
+      if (fSingle || control) {
         return;
       }
-      move(this->lineMoved(press.key == keys::kUp ? -1 : 1));
+      const std::size_t to = this->lineMoved(press.key == keys::kUp ? -1 : 1);
+      if (to == fCaret) {
+        return;
+      }
+      move(to);
     } else {
       return;
     }

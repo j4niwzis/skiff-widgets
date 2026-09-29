@@ -85,6 +85,8 @@ public:
   float fTrailingInset = 0.0f;
 
   [[nodiscard]] bool acceptsInput() const { return true; }
+  // A text field is what a press gives the focus to.
+  [[nodiscard]] bool takesFocusOnPress() const { return true; }
   [[nodiscard]] bool focusChangesAppearance() const { return true; }
 
   [[nodiscard]] bool onClick(float x, float y) {
