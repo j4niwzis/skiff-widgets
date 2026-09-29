@@ -39,6 +39,9 @@ struct TextAtom {
   std::size_t last = 0;
   std::string target;  // what it stands for, as a pill's link
   std::string plain;   // the text it reads as, unmarked or sent
+  // A picture in the line -- a custom emoji -- in place of its text (an em
+  // space the program put in for the room it takes), not a pill.
+  bool picture = false;
 };
 template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures>
 class TextArea : public skiff::scene::Node {
@@ -69,13 +72,13 @@ public:
   }
   // An atom put in at the caret, over what is selected: `shown` drawn as a
   // pill for `target`, read as `plain`.
-  void insertAtom(std::string shown, std::string target, std::string plain) {
+  void insertAtom(std::string shown, std::string target, std::string plain, bool picture = false) {
     if (fSingle) {
       std::erase(shown, '\n');
     }
     const std::size_t size = shown.size();
     this->insert(std::move(shown));
-    fAtoms.push_back({fCaret - size, fCaret, std::move(target), std::move(plain)});
+    fAtoms.push_back({fCaret - size, fCaret, std::move(target), std::move(plain), picture});
     std::ranges::sort(fAtoms, {}, &Atom::first);
     this->markDamaged();
   }
@@ -367,10 +370,21 @@ private:
         plain(from);
         const float x = left + this->xAt(p, line, from);
         const float width = this->xAt(p, line, to) - this->xAt(p, line, from);
+        at = to;
+        if (one.picture) {
+          // Its picture, square, as a message's text draws one.
+          if (const skia::Sp<skia::SkImage> *image = Pictures::picture(one.target); image && *image) {
+            const float side = fFontSize * 1.2f;
+            skia::SkPaint paint;
+            paint.setAlphaf(alpha);
+            canvas->drawImageRect(*image, skia::SkRect::MakeXYWH(x + (width - side) * 0.5f, y - fFontSize * 0.98f, side, side),
+                                  skia::SkSamplingOptions(skia::SkFilterMode::kLinear), &paint);
+          }
+          continue;
+        }
         skiff::nodes::drawPill(canvas, p, x, y, width, fFontSize, fTheme.fAccent,
                                from == one.first ? Pictures::pill(one.target) : std::nullopt, alpha);
         p.text(this->shown(from, to), x, y, fFontSize, fTheme.fAccent, alpha);
-        at = to;
       }
     }
     plain(line.fEnd);
