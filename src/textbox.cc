@@ -88,6 +88,10 @@ public:
   // A text field is what a press gives the focus to.
   [[nodiscard]] bool takesFocusOnPress() const { return true; }
   [[nodiscard]] bool focusChangesAppearance() const { return true; }
+  // The caret blinks by itself while the box has the focus, and goes with
+  // it: frames only while that is so, one a flip.
+  [[nodiscard]] bool settling() const { return this->focused() || fCaretShown; }
+  void update(double nowMs) { this->tickCaret(nowMs, this->focused()); }
 
   [[nodiscard]] bool onClick(float x, float y) {
     return fState.fBounds.contains(x, y);
@@ -188,11 +192,21 @@ public:
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
+    // As Telegram's and Element's fields: the plate the same focused or
+    // not, a thin accent border and the caret saying it has the focus --
+    // never the text on an accent fill.
     const bool active = this->selected() || this->focused();
-    p.fillRounded(fState.fBounds, fTheme.fCorner,
-                  active ? fTheme.fAccent : fTheme.fSurface, alpha);
-    const skia::SkColor textColour =
-        active ? fTheme.fOnAccent : fTheme.fText;
+    p.fillRounded(fState.fBounds, fTheme.fCorner, fTheme.fSurface, alpha);
+    if (active) {
+      skia::SkPaint border;
+      border.setAntiAlias(true);
+      border.setStyle(skia::kStrokeStyle);
+      border.setStrokeWidth(1.5f);
+      border.setColor(fTheme.fAccent);
+      border.setAlphaf(alpha);
+      canvas->drawRoundRect(fState.fBounds.makeInset(0.75f, 0.75f), fTheme.fCorner, fTheme.fCorner, border);
+    }
+    const skia::SkColor textColour = fTheme.fText;
 
     float textLeft = fState.fBounds.fLeft + fTheme.fPaddingX;
     if (fSearchIcon) {
