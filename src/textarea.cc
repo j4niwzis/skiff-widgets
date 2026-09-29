@@ -21,7 +21,7 @@ export namespace skiff::widgets {
 //
 // Editing as a desktop's: a press puts the caret, a drag selects, Shift with
 // a move extends the selection; Ctrl+A selects all, Ctrl+C, Ctrl+X and
-// Ctrl+V copy, cut and paste through skiff::scene::clipboard(); Ctrl with
+// Ctrl+V copy, cut and paste through skiff::scene's clipboard; Ctrl with
 // the arrows, Backspace or Delete goes by words. Enter calls
 // `onSubmit(text)` where it acts; otherwise it starts a new line in a field
 // of several lines, and is passed on in a field of one. Shift+Enter always
