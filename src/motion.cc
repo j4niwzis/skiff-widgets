@@ -390,6 +390,21 @@ private:
   bool fOpen = false;
 };
 
+// Where a dialog's box stands: in the middle of the window; or near its top,
+// as tdesktop's layers (a profile, a chat's info) -- a 24th of the window's
+// height down, held between two bounds.
+namespace dialog_place {
+struct centred {
+  friend bool operator==(centred, centred) = default;
+};
+struct near_top {
+  float minimal = 20.0f;  // infoLayerTopMinimal
+  float maximal = 40.0f;  // infoLayerTopMaximal
+  friend bool operator==(near_top, near_top) = default;
+};
+} // namespace dialog_place
+using DialogPlace = std::variant<dialog_place::centred, dialog_place::near_top>;
+
 // A box in the middle of the window over a dimmed background, as a settings
 // or confirmation dialog: it fades in, and a press off it or Esc from inside
 // it fades it out. It is a layer of its own -- it fills its parent and goes
@@ -411,6 +426,18 @@ public:
   void setSize(float width, float height) {
     fWidth = width;
     fHeight = height;
+    fFitsContent = false;
+    this->invalidateLayout();
+  }
+  // As wide as `width` at most, and as high as what it holds says: the
+  // content sizes its own height (autoSize on y), up to what the window has.
+  void setWidthFittingContent(float width) {
+    fWidth = width;
+    fFitsContent = true;
+    this->invalidateLayout();
+  }
+  void setPlace(DialogPlace place) {
+    fPlace = place;
     this->invalidateLayout();
   }
 
@@ -472,9 +499,23 @@ public:
     fScrim.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fScrim, box);
     const float width = std::min(fWidth, box.width() * 0.92f);
-    const float height = std::min(fHeight, box.height() * 0.9f);
+    // Its top, where it has one of its own; else it is centred.
+    const std::optional<float> top = std::visit(
+        skiff::scene::overloaded{
+            [](dialog_place::centred) -> std::optional<float> { return std::nullopt; },
+            [&](dialog_place::near_top near) -> std::optional<float> {
+              return std::clamp(box.height() / 24.0f, near.minimal, near.maximal);
+            }},
+        fPlace);
+    const float most = top ? box.height() - 2.0f * *top : box.height() * 0.9f;
+    float height = std::min(fHeight, most);
+    if (fFitsContent) {
+      fContent->fState.arrange(0.0f, 0.0f);
+      skiff::scene::layout(*fContent, skia::SkRect::MakeXYWH(box.fLeft, box.fTop, width, most));
+      height = std::min(fContent->fState.fBounds.height(), most);
+    }
     const skia::SkRect area = skia::SkRect::MakeXYWH(
-        box.centerX() - width * 0.5f, box.centerY() - height * 0.5f, width, height);
+        box.centerX() - width * 0.5f, top ? box.fTop + *top : box.centerY() - height * 0.5f, width, height);
     fSheet.apply({.width = width, .height = height});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, area);
@@ -524,6 +565,8 @@ private:
   skiff::paint::Tween fFade{0.0f, 160.0f, skiff::paint::movement::subtle{}};
   float fWidth = 420.0f;
   float fHeight = 560.0f;
+  bool fFitsContent = false;
+  DialogPlace fPlace = dialog_place::centred{};
   bool fClosing = false;
 };
 
