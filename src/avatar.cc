@@ -27,6 +27,14 @@ public:
     parts.initials.apply({.place = skiff::scene::anchor::kCentre});
     parts.picture.apply({.fill = true, .cornerRadius = size * 0.5f});
   }
+
+  // Another's: its initials, its picture and its colours.
+  void show(std::string initials, skiff::nodes::ImageSource picture, skiff::scene::Gradient colours) {
+    parts.initials.setText(std::move(initials));
+    parts.picture.setSource(std::move(picture));
+    fState.apply({.gradient = colours});
+    this->markDamaged();
+  }
 };
 
 } // namespace skiff::widgets
