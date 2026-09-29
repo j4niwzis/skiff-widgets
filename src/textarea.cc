@@ -4,6 +4,7 @@ import std;
 import skia;
 import skiff.paint;
 import skiff.scene;
+import skiff.nodes.text;
 export import skiff.widgets.theme;
 // With skiff's shaping, the caret steps over whole characters (UAX #29): an
 // emoji sequence or a letter with its marks is one step and one Backspace.
@@ -26,9 +27,23 @@ export namespace skiff::widgets {
 // `onSubmit(text)` where it acts; otherwise it starts a new line in a field
 // of several lines, and is passed on in a field of one. Shift+Enter always
 // starts a new line where there are several.
-template <class OnSubmit = skiff::scene::NoAction>
+//
+// Atoms: ranges of the text the program marks -- a mention picked from a
+// list -- drawn as a message draws them, a pill (its picture through
+// `Pictures`, as a text's), in the theme's accent. The caret steps over one
+// whole; Backspace at its end (Delete at its start) unmarks it, its text
+// then what the program said it reads as, plain, to be edited as any.
+// What is sent (`onSubmit`, plainText()) has each atom as it reads plain.
+struct TextAtom {
+  std::size_t first = 0;
+  std::size_t last = 0;
+  std::string target;  // what it stands for, as a pill's link
+  std::string plain;   // the text it reads as, unmarked or sent
+};
+template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures>
 class TextArea : public skiff::scene::Node {
 public:
+  using Atom = TextAtom;
   explicit TextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
       : fPlaceholder(std::move(placeholder)), fOnSubmit(std::move(onSubmit)) {
     fState.fHeight = this->heightFor(1);
@@ -41,8 +56,41 @@ public:
   void insertText(std::string text) { this->insert(std::move(text)); }
   void setText(std::string text) {
     fText = std::move(text);
+    fAtoms.clear();
     fCaret = fAnchor = fText.size();
     this->edited();
+  }
+  // What is between two offsets selected, as a picker replaces what was
+  // typed for it (an @ and a name begun).
+  void select(std::size_t from, std::size_t to) {
+    fAnchor = std::min(from, fText.size());
+    fCaret = std::min(to, fText.size());
+    this->showCaret();
+  }
+  // An atom put in at the caret, over what is selected: `shown` drawn as a
+  // pill for `target`, read as `plain`.
+  void insertAtom(std::string shown, std::string target, std::string plain) {
+    if (fSingle) {
+      std::erase(shown, '\n');
+    }
+    const std::size_t size = shown.size();
+    this->insert(std::move(shown));
+    fAtoms.push_back({fCaret - size, fCaret, std::move(target), std::move(plain)});
+    std::ranges::sort(fAtoms, {}, &Atom::first);
+    this->markDamaged();
+  }
+  [[nodiscard]] const std::vector<Atom> &atoms() const noexcept { return fAtoms; }
+  // The text with each atom as it reads plain: what is sent.
+  [[nodiscard]] std::string plainText() const {
+    std::string out;
+    std::size_t at = 0;
+    for (const Atom &one : fAtoms) {
+      out.append(fText, at, one.first - at);
+      out += one.plain;
+      at = one.last;
+    }
+    out.append(fText, at);
+    return out;
   }
   // One line only: no wrapping, a newline never typed.
   void setSingleLine(bool single) {
@@ -107,7 +155,7 @@ public:
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &at,
                  skiff::scene::PointerReply &reply) {
-    fCaret = this->offsetAt(at.x, at.y);
+    fCaret = this->outOfAtoms(this->offsetAt(at.x, at.y));
     fAnchor = fCaret;
     fDragging = true;
     reply.capturePointer();
@@ -118,7 +166,7 @@ public:
     if (!fDragging) {
       return;
     }
-    fCaret = this->offsetAt(at.x, at.y);
+    fCaret = this->outOfAtoms(this->offsetAt(at.x, at.y));
     this->showCaret();
     reply.handle();
   }
@@ -151,7 +199,7 @@ public:
     const bool shift = press.modifiers.has<modifier::shift>();
     const bool control = press.modifiers.has<modifier::control>();
     const auto move = [&](std::size_t to) {
-      fCaret = to;
+      fCaret = this->outOfAtoms(to, to > fCaret);
       if (!shift) {
         fAnchor = fCaret;
       }
@@ -160,7 +208,7 @@ public:
       if (!fSingle && (shift || !skiff::scene::acts(fOnSubmit))) {
         this->insert("\n");
       } else if (skiff::scene::acts(fOnSubmit)) {
-        std::invoke(fOnSubmit, std::string_view(fText));
+        std::invoke(fOnSubmit, std::string_view(this->plainText()));
       } else {
         return; // a form's to act on
       }
@@ -186,12 +234,18 @@ public:
     } else if (press.key == keys::kBackspace) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
+      } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::last); atom != fAtoms.end()) {
+        this->unmark(atom);
       } else if (fCaret > 0) {
         this->erase(control ? wordBefore(fText, fCaret) : previous(fText, fCaret), fCaret);
       }
     } else if (press.key == keys::kDelete) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
+      } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::first); atom != fAtoms.end()) {
+        const std::size_t first = atom->first;
+        this->unmark(atom);
+        fCaret = fAnchor = first;
       } else if (fCaret < fText.size()) {
         this->erase(fCaret, control ? wordAfter(fText, fCaret) : next(fText, fCaret));
       }
@@ -272,8 +326,7 @@ public:
         p.fillRounded(skia::SkRect::MakeLTRB(box.fLeft + x0, top, box.fLeft + x1, top + lineHeight),
                       2.0f, fTheme.fAccent, alpha * 0.35f);
       }
-      p.text(this->shown(line.fStart, line.fEnd), box.fLeft - shift, top + fFontSize, fFontSize,
-             fTheme.fText, alpha);
+      this->drawLine(canvas, p, line, box.fLeft - shift, top + fFontSize, alpha);
     }
     if (fCaretShown && !fLines.empty()) {
       const std::size_t at = this->lineOf(fCaret);
@@ -296,6 +349,69 @@ private:
     std::size_t fEnd = 0;
   };
 
+  // A line: its text, its atoms' pieces as pills in the accent.
+  void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &p, const Line &line, float left, float y,
+                float alpha) const {
+    std::size_t at = line.fStart;
+    const auto plain = [&](std::size_t to) {
+      if (to > at) {
+        p.text(this->shown(at, to), left + this->xAt(p, line, at), y, fFontSize, fTheme.fText, alpha);
+      }
+    };
+    if (!fMasked) {
+      for (const Atom &one : fAtoms) {
+        if (one.last <= line.fStart || one.first >= line.fEnd) {
+          continue;
+        }
+        const std::size_t from = std::max(one.first, line.fStart), to = std::min(one.last, line.fEnd);
+        plain(from);
+        const float x = left + this->xAt(p, line, from);
+        const float width = this->xAt(p, line, to) - this->xAt(p, line, from);
+        skiff::nodes::drawPill(canvas, p, x, y, width, fFontSize, fTheme.fAccent,
+                               from == one.first ? Pictures::pill(one.target) : std::nullopt, alpha);
+        p.text(this->shown(from, to), x, y, fFontSize, fTheme.fAccent, alpha);
+        at = to;
+      }
+    }
+    plain(line.fEnd);
+  }
+  // An offset out of any atom it falls inside: to the atom's end it goes
+  // towards, or its nearer.
+  [[nodiscard]] std::size_t outOfAtoms(std::size_t offset, std::optional<bool> forward = std::nullopt) const {
+    for (const Atom &one : fAtoms) {
+      if (offset > one.first && offset < one.last) {
+        const bool after = forward ? *forward : offset - one.first > one.last - offset;
+        return after ? one.last : one.first;
+      }
+    }
+    return offset;
+  }
+  // An atom unmarked: its text what it reads plain, the caret after it.
+  void unmark(std::vector<Atom>::iterator atom) {
+    const Atom one = *atom;
+    fAtoms.erase(atom);
+    fAnchor = fCaret = one.first;
+    this->eraseText(one.first, one.last);
+    fText.insert(one.first, one.plain);
+    this->shiftAtoms(one.first, static_cast<std::ptrdiff_t>(one.plain.size()));
+    fCaret = fAnchor = one.first + one.plain.size();
+    this->edited();
+  }
+  // Atoms at or past `from` moved by `by` bytes.
+  void shiftAtoms(std::size_t from, std::ptrdiff_t by) {
+    for (Atom &one : fAtoms) {
+      if (one.first >= from) {
+        one.first = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.first) + by);
+        one.last = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.last) + by);
+      }
+    }
+  }
+  // Text taken out: atoms it cuts into gone, those after it moved back.
+  void eraseText(std::size_t from, std::size_t to) {
+    fText.erase(from, to - from);
+    std::erase_if(fAtoms, [&](const Atom &one) { return one.first < to && one.last > from; });
+    this->shiftAtoms(to, -static_cast<std::ptrdiff_t>(to - from));
+  }
   [[nodiscard]] float heightFor(int lines) const {
     return static_cast<float>(lines) * fFontSize * kLineSpacing + 2.0f * kPadY;
   }
@@ -342,13 +458,16 @@ private:
     if (this->hasSelection()) {
       this->erase(this->low(), this->high());
     }
+    // Typed inside an atom: it is text again.
+    std::erase_if(fAtoms, [&](const Atom &one) { return fCaret > one.first && fCaret < one.last; });
     fText.insert(fCaret, typed);
+    this->shiftAtoms(fCaret, static_cast<std::ptrdiff_t>(typed.size()));
     fCaret += typed.size();
     fAnchor = fCaret;
     this->edited();
   }
   void erase(std::size_t from, std::size_t to) {
-    fText.erase(from, to - from);
+    this->eraseText(from, to);
     fCaret = fAnchor = from;
     this->edited();
   }
@@ -531,6 +650,7 @@ private:
   }
 
   std::string fText;
+  std::vector<Atom> fAtoms;
   std::string fPlaceholder;
   [[no_unique_address]] OnSubmit fOnSubmit;
   Theme fTheme = theme();
