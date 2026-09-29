@@ -73,7 +73,7 @@ public:
     const float width = fState.fRelativeSizeAxes.has<skiff::scene::axis::x>()
                             ? parent.width() * fState.fWidth
                             : fState.fWidth;
-    this->wrap(width);
+    this->wrap(width - fState.fPadding.fLeft - fState.fPadding.fRight);
     fState.fHeight = this->heightFor(
         std::clamp(static_cast<int>(fLines.size()), 1, fMaxLines));
   }
@@ -247,7 +247,7 @@ public:
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    const skia::SkRect &box = fState.fBounds;
+    const skia::SkRect box = this->textBox();
     const int save = canvas->save();
     canvas->clipRect(box, true);
     const float lineHeight = fFontSize * kLineSpacing;
@@ -318,13 +318,20 @@ private:
   [[nodiscard]] float xAt(const skiff::paint::Painter &p, const Line &line, std::size_t offset) const {
     return p.measure(this->shown(line.fStart, std::min(offset, line.fEnd)), fFontSize);
   }
+  // Where the text goes: its bounds within its padding at the sides, as a
+  // field's plate keeps its text off its edges.
+  [[nodiscard]] skia::SkRect textBox() const {
+    const skia::SkRect &b = fState.fBounds;
+    return skia::SkRect::MakeLTRB(b.fLeft + fState.fPadding.fLeft, b.fTop, b.fRight - fState.fPadding.fRight,
+                                  b.fBottom);
+  }
   // How far a field of one line is scrolled, so the caret stays in it.
   [[nodiscard]] float scrollX(const skiff::paint::Painter &p) const {
     if (!fSingle || fLines.empty()) {
       return 0.0f;
     }
     const float caret = this->xAt(p, fLines.front(), fCaret);
-    const float room = fState.fBounds.width() - 4.0f;
+    const float room = this->textBox().width() - 4.0f;
     return caret > room ? caret - room : 0.0f;
   }
 
@@ -437,7 +444,7 @@ private:
                     static_cast<int>(std::floor((y - fState.fBounds.fTop - kPadY) / lineHeight));
     const Line &line =
         fLines[static_cast<std::size_t>(std::clamp(row, 0, static_cast<int>(fLines.size()) - 1))];
-    return this->offsetIn(p, line, x - fState.fBounds.fLeft + this->scrollX(p));
+    return this->offsetIn(p, line, x - this->textBox().fLeft + this->scrollX(p));
   }
   [[nodiscard]] std::size_t offsetIn(const skiff::paint::Painter &p, const Line &line, float x) const {
     std::size_t best = line.fStart;
