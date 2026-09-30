@@ -43,7 +43,45 @@ struct TextAtom {
   // space the program put in for the room it takes), not a pill.
   bool picture = false;
 };
-template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures>
+// Blocks: what the program makes of whole paragraphs -- a quote, say --
+// given as the field's `Blocks` parameter, a type with static members; the
+// field itself knows none. For each paragraph (a line up to a newline, and
+// what it wraps onto) it asks look(text, start): how many bytes at its start
+// are marks, not drawn and taking no room, the caret kept out of them; how
+// far its lines stand in; and how much room they keep at the right. It asks
+// drawBehind(...) to draw under the lines in view, each given with where its
+// paragraph starts and where it is drawn. And a key pressed with nothing
+// selected goes to key(text, caret, press) first: an edit it returns -- a
+// range replaced, the caret put -- is made instead of what the key would do.
+struct BlockLook {
+  std::size_t hidden = 0;  // marks at the paragraph's start: not drawn
+  float indent = 0.0f;     // how far its lines stand in
+  float right = 0.0f;      // room kept at their right
+};
+// A line in view, for drawBehind: its paragraph's start, where it is drawn.
+struct ShownLine {
+  std::size_t paragraph = 0;
+  float top = 0.0f;
+  float bottom = 0.0f;
+};
+// What a block's key does to the text: [from, to) replaced by `with`, the
+// caret put at `caret`, in the text as it is after.
+struct TextEdit {
+  std::size_t from = 0;
+  std::size_t to = 0;
+  std::string with;
+  std::size_t caret = 0;
+};
+// No blocks: every paragraph plain.
+struct NoBlocks {
+  [[nodiscard]] static BlockLook look(std::string_view, std::size_t) { return {}; }
+  static void drawBehind(skia::SkCanvas *, const skiff::paint::Painter &, std::string_view, std::span<const ShownLine>,
+                         const skia::SkRect &, const Theme &, float, float) {}
+  [[nodiscard]] static std::optional<TextEdit> key(std::string_view, std::size_t, const skiff::scene::key::down &) {
+    return std::nullopt;
+  }
+};
+template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures, class Blocks = NoBlocks>
 class TextArea : public skiff::scene::Node {
 public:
   using Atom = TextAtom;
@@ -224,25 +262,22 @@ public:
         fAnchor = fCaret;
       }
     };
+    // The program's blocks first: a key that means something in one of
+    // them -- Enter in a quote -- is theirs.
+    if (!fMasked && !fSingle && !this->hasSelection()) {
+      if (std::optional<TextEdit> edit = Blocks::key(fText, fCaret, press)) {
+        this->eraseText(edit->from, edit->to);
+        fText.insert(edit->from, edit->with);
+        this->shiftAtoms(edit->from, static_cast<std::ptrdiff_t>(edit->with.size()));
+        fCaret = fAnchor = this->outOfAtoms(std::min(edit->caret, fText.size()), true);
+        this->edited();
+        reply.handle();
+        return;
+      }
+    }
     if (press.key == keys::kEnter) {
       if (!fSingle && (shift || !skiff::scene::acts(fOnSubmit))) {
-        // In a quote: the next line quoted too; an empty quoted line ends
-        // the quote instead, as a chat's field does.
-        const std::size_t start = this->lineStartOf(fCaret);
-        if (const int depth = this->quoteDepthAt(fCaret); !this->hasSelection() && depth > 0) {
-          const std::size_t marks = start + 2 * static_cast<std::size_t>(depth);
-          if (fCaret == marks && (fCaret == fText.size() || fText[fCaret] == '\n')) {
-            this->erase(start, marks);  // an empty quoted line: the quote ends
-          } else {
-            std::string next = "\n";
-            for (int level = 0; level < depth; ++level) {
-              next += "> ";
-            }
-            this->insert(next);
-          }
-        } else {
-          this->insert("\n");
-        }
+        this->insert("\n");
       } else if (skiff::scene::acts(fOnSubmit)) {
         // Once for a press: Enter held a moment repeats, and each repeat
         // came before the program had emptied the field -- what was written
@@ -277,11 +312,6 @@ public:
     } else if (press.key == keys::kBackspace) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
-      } else if (const std::size_t start = this->lineStartOf(fCaret), depth = static_cast<std::size_t>(this->quoteDepthAt(fCaret));
-                 depth > 0 && fCaret == start + 2 * depth) {
-        // Right after a quote's marks: a level of quote taken off, its text
-        // kept -- not one character of the mark.
-        this->erase(start + 2 * (depth - 1), start + 2 * depth);
       } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::last); atom != fAtoms.end()) {
         this->unmark(atom);
       } else if (fCaret > 0) {
@@ -360,6 +390,15 @@ public:
     }
     const int first = this->firstShown();
     const std::size_t low = this->low(), high = this->high();
+    // Under the lines in view, what the program's blocks draw there.
+    if (!fMasked && !fSingle) {
+      std::vector<ShownLine> shownLines;
+      for (int i = first; i < static_cast<int>(fLines.size()); ++i) {
+        const float top = box.fTop + kPadY + static_cast<float>(i - first) * lineHeight;
+        shownLines.push_back({this->lineStartOf(fLines[static_cast<std::size_t>(i)].fStart), top, top + lineHeight});
+      }
+      Blocks::drawBehind(canvas, p, fText, shownLines, box, fTheme, fFontSize, alpha);
+    }
     for (int i = first; i < static_cast<int>(fLines.size()); ++i) {
       const Line &line = fLines[static_cast<std::size_t>(i)];
       const float top = box.fTop + kPadY + static_cast<float>(i - first) * lineHeight;
@@ -373,23 +412,6 @@ public:
         }
         p.fillRounded(skia::SkRect::MakeLTRB(box.fLeft + x0, top, box.fLeft + x1, top + lineHeight),
                       2.0f, fTheme.fAccent, alpha * 0.35f);
-      }
-      // A line of a quote -- one that starts "> ", and what it wraps onto --
-      // drawn as one: a bar at its start on a faint plate in the accent,
-      // as a message draws its quotes.
-      if (const int depth = fMasked ? 0 : this->quoteDepthAt(line.fStart); depth > 0) {
-        p.fillRect(skia::SkRect::MakeXYWH(box.fLeft, top, box.width(), lineHeight),
-                   (fTheme.fAccent & 0x00FFFFFFu) | 0x1F000000u, alpha);
-        // A bar for each level, each in a colour of its own.
-        for (int level = 0; level < depth; ++level) {
-          const skia::SkColor c = fTheme.fAccent;
-          const unsigned a = (c >> 24) & 0xFF, r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
-          const skia::SkColor turned = level % 3 == 1 ? (a << 24) | (g << 16) | (b << 8) | r
-                                       : level % 3 == 2 ? (a << 24) | (b << 16) | (r << 8) | g
-                                                        : c;
-          p.fillRect(skia::SkRect::MakeXYWH(box.fLeft + static_cast<float>(level) * 6.0f, top, 3.0f, lineHeight), turned,
-                     alpha);
-        }
       }
       this->drawLine(canvas, p, line, box.fLeft - shift, top + fFontSize, alpha);
     }
@@ -418,24 +440,18 @@ private:
     std::size_t fEnd = 0;
   };
 
+  // How the paragraph an offset is in looks, as the program's blocks say.
+  [[nodiscard]] BlockLook lookAt(std::size_t at) const {
+    return fMasked || fSingle ? BlockLook{} : Blocks::look(fText, this->lineStartOf(at));
+  }
+  // How far a line's text stands in: its paragraph's indent.
+  [[nodiscard]] float indentOf(const Line &line) const { return this->lookAt(line.fStart).indent; }
   // A line: its text, its atoms' pieces as pills in the accent.
   // Where the line an offset is on starts, after the newline before it.
   [[nodiscard]] std::size_t lineStartOf(std::size_t at) const {
     const std::size_t before = at == 0 ? std::string::npos : fText.rfind('\n', at - 1);
     return before == std::string::npos ? 0 : before + 1;
   }
-  // How deep in quotes the line an offset is on is: how many "> " it
-  // starts with.
-  [[nodiscard]] int quoteDepthAt(std::size_t at) const {
-    std::size_t mark = this->lineStartOf(at);
-    int depth = 0;
-    while (fText.compare(mark, 2, "> ") == 0) {
-      ++depth;
-      mark += 2;
-    }
-    return depth;
-  }
-  [[nodiscard]] bool quotedAt(std::size_t at) const { return this->quoteDepthAt(at) > 0; }
   void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &p, const Line &line, float left, float y,
                 float alpha) const {
     std::size_t at = line.fStart;
@@ -481,10 +497,10 @@ private:
         return after ? one.last : one.first;
       }
     }
-    // Never before or inside a quote's hidden "> ": to after it, or --
-    // going back from it -- to the end of the line before.
+    // Never before or inside a paragraph's hidden marks: to after them, or
+    // -- going back from them -- to the end of the line before.
     const std::size_t start = this->lineStartOf(offset);
-    const std::size_t marks = start + 2 * static_cast<std::size_t>(this->quoteDepthAt(offset));
+    const std::size_t marks = start + this->lookAt(start).hidden;
     if (offset < marks) {
       const bool back = forward.has_value() && !*forward;
       return back && start > 0 ? start - 1 : marks;
@@ -528,15 +544,14 @@ private:
   // each character.
   [[nodiscard]] std::string shown(std::size_t from, std::size_t to) const {
     if (!fMasked) {
-      // A quote's "> " at the start of a line is not drawn, and takes no
-      // room: the line is shown as a quote instead, as Telegram's field.
+      // A paragraph's marks, as its block says, are not drawn and take no
+      // room: the block shows what they mean instead.
       std::string out;
       std::size_t at = from;
       while (at < to) {
-        if ((at == 0 || fText[at - 1] == '\n') && fText.compare(at, 2, "> ") == 0) {
-          while (at < to && fText.compare(at, 2, "> ") == 0) {
-            at = std::min(to, at + 2);  // every level's mark
-          }
+        const std::size_t start = this->lineStartOf(at);
+        if (const std::size_t marks = start + this->lookAt(start).hidden; at < marks) {
+          at = std::min(to, marks);
           continue;
         }
         const std::size_t newline = fText.find('\n', at);
@@ -553,7 +568,7 @@ private:
     return out;
   }
   [[nodiscard]] float xAt(const skiff::paint::Painter &p, const Line &line, std::size_t offset) const {
-    return p.measure(this->shown(line.fStart, std::min(offset, line.fEnd)), fFontSize);
+    return this->indentOf(line) + p.measure(this->shown(line.fStart, std::min(offset, line.fEnd)), fFontSize);
   }
   // Where the text goes: its bounds within its padding at the sides, as a
   // field's plate keeps its text off its edges.
@@ -612,11 +627,16 @@ private:
       return;
     }
     const skiff::paint::Painter p(nullptr, *font);
+    // A block's lines narrower: in by their indent, its room at the right
+    // kept.
+    float room = width;
     const auto fits = [&](std::size_t from, std::size_t to) {
-      return p.measure(this->shown(from, to), fFontSize) <= width;
+      return p.measure(this->shown(from, to), fFontSize) <= room;
     };
     std::size_t start = 0;
     while (true) {
+      const BlockLook look = this->lookAt(start);
+      room = look.indent + look.right > 0.0f ? std::max(width - look.indent - look.right, fFontSize * 2.0f) : width;
       const std::size_t newline = fText.find('\n', start);
       const std::size_t stop = newline == std::string::npos ? fText.size() : newline;
       std::size_t from = start;
