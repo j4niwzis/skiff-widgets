@@ -22,3 +22,4 @@ export import skiff.widgets.menu;
 export import skiff.widgets.avatar;
 export import skiff.widgets.pill;
 export import skiff.widgets.loader;
+export import skiff.widgets.wallpaper;
