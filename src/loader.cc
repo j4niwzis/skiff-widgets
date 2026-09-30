@@ -46,7 +46,11 @@ public:
   [[nodiscard]] bool wantsTick() const { return fState.fVisible && fState.fAlpha > 0.001f; }
   void update(double nowMs) {
     fAngle = static_cast<float>(std::fmod(nowMs * 0.36, 360.0));  // a turn a second
-    this->markDamaged();
+    // Repainted only while it shows: a hidden one, gone into by a walk that
+    // goes everywhere, was repainted at every frame -- an empty square.
+    if (this->wantsTick()) {
+      this->markDamaged();
+    }
   }
   void drawSelf(skia::SkCanvas *canvas, float alpha) {
     const skia::SkRect &box = fState.fBounds;
