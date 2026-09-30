@@ -221,6 +221,13 @@ public:
       if (!fSingle && (shift || !skiff::scene::acts(fOnSubmit))) {
         this->insert("\n");
       } else if (skiff::scene::acts(fOnSubmit)) {
+        // Once for a press: Enter held a moment repeats, and each repeat
+        // came before the program had emptied the field -- what was written
+        // sent twice.
+        if (press.repeat) {
+          reply.handle();
+          return;
+        }
         std::invoke(fOnSubmit, std::string_view(this->plainText()));
       } else {
         return; // a form's to act on
