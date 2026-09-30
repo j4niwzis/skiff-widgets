@@ -132,7 +132,7 @@ public:
       }
       fBlurred = small.asImage();
     }
-    skiff::scene::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
+    skiff::scene::detail::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
   }
 
 private:
