@@ -29,7 +29,10 @@ public:
   explicit SliderBar(OnSet onSet = {}, OnDone onDone = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
-    fState.fHeight = 6.0f;
+    // As tall as the knob, the track in its middle: what the knob covers is
+    // in the box, and repainted with it as it moves -- a box as thin as the
+    // track left the knob's top and bottom where they were.
+    fState.fHeight = 2.0f * fKnobRadius + 2.0f;
   }
 
   void setTheme(Theme value) {
@@ -49,10 +52,11 @@ public:
 
   // Where along the track a pointer at x sits, as a fraction.
   [[nodiscard]] float fractionAt(float x) const {
-    if (fState.fBounds.width() <= 0.0f) {
+    const skia::SkRect line = this->track();
+    if (line.width() <= 0.0f) {
       return fFraction;
     }
-    return std::clamp((x - fState.fBounds.fLeft) / fState.fBounds.width(), 0.0f, 1.0f);
+    return std::clamp((x - line.fLeft) / line.width(), 0.0f, 1.0f);
   }
 
 public:
@@ -62,11 +66,15 @@ public:
 
   // The knob stands proud of the track, so the box that takes a click is
   // taller than the box that is drawn.
-  [[nodiscard]] skia::SkRect reach() const {
-    return skia::SkRect::MakeLTRB(
-        fState.fBounds.fLeft, fState.fBounds.centerY() - fKnobRadius, fState.fBounds.fRight,
-        fState.fBounds.centerY() + fKnobRadius);
+  [[nodiscard]] skia::SkRect reach() const { return fState.fBounds; }
+  // The track: its height, in the middle of the box, inside the knob's
+  // radius at either end so the knob stays in the box too.
+  [[nodiscard]] skia::SkRect track() const {
+    const skia::SkRect &box = fState.fBounds;
+    return skia::SkRect::MakeLTRB(box.fLeft + fKnobRadius, box.centerY() - kTrack * 0.5f, box.fRight - fKnobRadius,
+                                  box.centerY() + kTrack * 0.5f);
   }
+  static constexpr float kTrack = 6.0f;
 
   void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
@@ -74,13 +82,11 @@ public:
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    p.fillRounded(fState.fBounds, fTrackRadius, fTheme.fSurface, alpha);
-    p.fillRounded(skia::SkRect::MakeXYWH(fState.fBounds.fLeft, fState.fBounds.fTop,
-                                         fState.fBounds.width() * fFraction,
-                                         fState.fBounds.height()),
-                  fTrackRadius, fTheme.fAccent, alpha);
-    p.circle(fState.fBounds.fLeft + fState.fBounds.width() * fFraction, fState.fBounds.centerY(),
-             fKnobRadius, fTheme.fText, alpha);
+    const skia::SkRect line = this->track();
+    p.fillRounded(line, fTrackRadius, fTheme.fSurface, alpha);
+    p.fillRounded(skia::SkRect::MakeXYWH(line.fLeft, line.fTop, line.width() * fFraction, line.height()), fTrackRadius,
+                  fTheme.fAccent, alpha);
+    p.circle(line.fLeft + line.width() * fFraction, line.centerY(), fKnobRadius, fTheme.fText, alpha);
     if (this->showsFocus()) {
       p.strokeRounded(this->reach(), fKnobRadius, fTheme.fAccent, 1.5f,
                       alpha);
