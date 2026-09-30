@@ -20,10 +20,13 @@ export namespace skiff::widgets {
 // the pointer goes, which is the screen's business. fractionAt turns a
 // pointer position into a value using the bar's own bounds, which is the part
 // the screen would otherwise work out from a rectangle it kept a copy of.
-template <class OnSet = skiff::scene::NoAction>
+// OnDone, where there is one, is told the value once a drag lets go (or a
+// key sets it): what is costly to apply at each step of a drag waits for
+// it, the bar showing the value dragged to meanwhile.
+template <class OnSet = skiff::scene::NoAction, class OnDone = skiff::scene::NoAction>
 class SliderBar : public skiff::scene::Node {
 public:
-  explicit SliderBar(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
+  explicit SliderBar(OnSet onSet = {}, OnDone onDone = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     fState.fHeight = 6.0f;
@@ -86,19 +89,33 @@ public:
 
   // Without a setter it is a picture of a value and clicks fall through to
   // whatever is behind it.
-  [[nodiscard]] bool acceptsInput() const { return skiff::scene::acts(fOnSet); }
-  [[nodiscard]] bool focusChangesAppearance() const {
-    return skiff::scene::acts(fOnSet);
+  [[nodiscard]] bool acceptsInput() const { return this->takes(); }
+  [[nodiscard]] bool focusChangesAppearance() const { return this->takes(); }
+  [[nodiscard]] bool takes() const { return skiff::scene::acts(fOnSet) || skiff::scene::acts(fOnDone); }
+  // Moved to a value: shown at once where it is told only when let go, and
+  // said to the setter where there is one.
+  void follow(float fraction) {
+    if (skiff::scene::acts(fOnDone)) {
+      this->setFraction(fraction);
+    }
+    if (skiff::scene::acts(fOnSet)) {
+      std::invoke(fOnSet, fraction);
+    }
+  }
+  void done() {
+    if (skiff::scene::acts(fOnDone)) {
+      std::invoke(fOnDone, fFraction);
+    }
   }
 
   using Node::onPointer;
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &press,
                  skiff::scene::PointerReply &reply) {
-    if (!skiff::scene::acts(fOnSet) || !this->reach().contains(press.x, press.y)) {
+    if (!this->takes() || !this->reach().contains(press.x, press.y)) {
       return;
     }
     fDragging = true;
-    std::invoke(fOnSet, this->fractionAt(press.x));
+    this->follow(this->fractionAt(press.x));
     reply.capturePointer();
     reply.requestFocus();
     reply.handle();
@@ -106,7 +123,7 @@ public:
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::move &move,
                  skiff::scene::PointerReply &reply) {
     if (fDragging) {
-      std::invoke(fOnSet, this->fractionAt(move.x));
+      this->follow(this->fractionAt(move.x));
       reply.handle();
     }
   }
@@ -123,6 +140,7 @@ public:
       fDragging = false;
       reply.releasePointer();
       reply.handle();
+      this->done();
     }
   }
 
@@ -151,24 +169,21 @@ public:
     this->setBy(std::clamp(set.value, 0.0f, 1.0f), reply);
   }
   void setBy(float fraction, skiff::scene::Reply &reply) {
-    if (skiff::scene::acts(fOnSet)) {
-      std::invoke(fOnSet, fraction);
+    if (this->takes()) {
+      this->follow(fraction);
+      this->done();
       reply.handle();
     }
   }
 
   [[nodiscard]] bool onClick(float x, float y) {
-    if (!skiff::scene::acts(fOnSet) || !this->reach().contains(x, y)) {
-      return false;
-    }
-    if (skiff::scene::acts(fOnSet)) {
-      std::invoke(fOnSet, this->fractionAt(x));
-    }
-    return true;
+    // Said by the press and its letting go already, where it was pressed.
+    return this->takes() && this->reach().contains(x, y);
   }
 
 private:
   [[no_unique_address]] OnSet fOnSet;
+  [[no_unique_address]] OnDone fOnDone;
   float fFraction = 0.0f;
   bool fDragging = false;
 };
