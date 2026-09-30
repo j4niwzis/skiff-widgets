@@ -477,6 +477,10 @@ public:
     fClosing = true;
     fFade.setTarget(0.0f);
     this->showFade();
+    // Ticked from the next frame, where the fade goes: nothing it shows has
+    // changed yet, so nothing else marked it, and a dialog closed stayed up
+    // until some other change had the frames walk it.
+    skiff::scene::work::mark(fState.fId);
   }
   void dropClosed() {
     if (fContent && fClosing && !fFade.moving()) {
