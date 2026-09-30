@@ -145,6 +145,8 @@ public:
   // The bar lights the tab under the pointer, so moving between two tabs of
   // the same bar changes what it draws while the bar itself stays hovered.
   // Nothing else in the tree would notice that.
+  // Ticked while the pointer is over it, or a tab is still lit from it.
+  [[nodiscard]] bool wantsTick() const { return fState.hovered() || fHotTab != -1; }
   void update(double) {
     const int hot = this->tabAt(fState.hoverX(), fState.hoverY());
     if (hot != fHotTab) {

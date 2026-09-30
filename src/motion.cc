@@ -59,6 +59,8 @@ public:
   [[nodiscard]] bool settling() const {
     return fUnfold.moving() || fChildHeight != fUsedHeight;
   }
+  // Ticked while it unfolds, or has yet to hide what it folded away.
+  [[nodiscard]] bool wantsTick() const { return this->settling() || (!fOpen && fChild.fState.fVisible); }
   void update(double nowMs) {
     if (fUnfold.step(nowMs) || fChildHeight != fUsedHeight) {
       this->invalidateLayout();
@@ -234,6 +236,7 @@ public:
       return layer.fSlide.moving();
     });
   }
+  [[nodiscard]] bool wantsTick() const { return this->settling(); }
   void update(double nowMs) {
     bool moved = false;
     for (SlideLayer<Over> &layer : fLayers) {
@@ -323,6 +326,7 @@ public:
   }
 
   [[nodiscard]] bool settling() const { return fSlide.moving(); }
+  [[nodiscard]] bool wantsTick() const { return this->settling(); }
   void update(double nowMs) {
     if (fSlide.step(nowMs)) {
       this->showWhatMoves();
@@ -491,6 +495,7 @@ public:
   }
 
   [[nodiscard]] bool settling() const { return fFade.moving(); }
+  [[nodiscard]] bool wantsTick() const { return this->settling(); }
   void update(double nowMs) {
     if (fFade.step(nowMs)) {
       this->showFade();

@@ -134,6 +134,8 @@ public:
   [[nodiscard]] bool takesFocusOnPress() const { return true; }
   // The caret blinks, 530 on and 530 off: a frame at each turn, asked for
   // when it is due -- not a frame at a time while it is focused.
+  // Ticked while it has the caret.
+  [[nodiscard]] bool wantsTick() const { return this->focused(); }
   [[nodiscard]] double wakeAt() const {
     if (!this->focused()) {
       return std::numeric_limits<double>::infinity();

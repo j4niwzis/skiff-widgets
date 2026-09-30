@@ -91,6 +91,8 @@ public:
   // The caret blinks by itself while the box has the focus, and goes with
   // it: frames only while that is so, one a flip.
   [[nodiscard]] bool settling() const { return this->focused() || fCaretShown; }
+  // Ticked while it has the caret.
+  [[nodiscard]] bool wantsTick() const { return this->focused(); }
   void update(double nowMs) { this->tickCaret(nowMs, this->focused()); }
 
   [[nodiscard]] bool onClick(float x, float y) {

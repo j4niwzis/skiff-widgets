@@ -400,6 +400,8 @@ public:
     return !skiff::paint::settled(fKnob, fOn ? 1.0f : 0.0f);
   }
 
+  // Ticked while the knob is on its way.
+  [[nodiscard]] bool wantsTick() const { return fKnob != (fOn ? 1.0f : 0.0f); }
   void update(double nowMs) {
     const double dt = fLastMs > 0.0 ? nowMs - fLastMs : 16.0;
     fLastMs = nowMs;

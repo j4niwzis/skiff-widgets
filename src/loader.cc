@@ -42,6 +42,8 @@ public:
     return true;
   }
   [[nodiscard]] bool settling() const { return this->visible() && !fStopped; }
+  // Turning while it shows; hidden, not ticked -- nor repainted each frame.
+  [[nodiscard]] bool wantsTick() const { return fState.fVisible && fState.fAlpha > 0.001f; }
   void update(double nowMs) {
     fAngle = static_cast<float>(std::fmod(nowMs * 0.36, 360.0));  // a turn a second
     this->markDamaged();
