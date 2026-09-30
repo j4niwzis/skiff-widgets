@@ -110,13 +110,13 @@ public:
   }
 
   // Frosted nodes' backdrop: this wallpaper blurred -- made once for a size,
-  // at a sixteenth of it, and drawn back up smooth -- and where it is on the
+  // at a quarter of it, and drawn back up smooth -- and where it is on the
   // device. What frosts draws a piece of it, one image; nothing is blurred
   // at a frame.
   void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
     if (!fBlurred) {
-      const int width = std::max(1, static_cast<int>(box.width() / 16.0f));
-      const int height = std::max(1, static_cast<int>(box.height() / 16.0f));
+      const int width = std::max(1, static_cast<int>(box.width() / kShrink));
+      const int height = std::max(1, static_cast<int>(box.height() / kShrink));
       skia::SkBitmap small;
       if (!small.tryAllocN32Pixels(width, height)) {
         return;
@@ -130,12 +130,60 @@ public:
       if (fDrawn) {
         into.drawImageRect(fDrawn, all, skia::SkSamplingOptions(skia::SkFilterMode::kLinear, skia::SkMipmapMode::kLinear));
       }
+      // Blurred for real, a little -- a box three times over, near enough a
+      // Gaussian: the picture still seen through the frost, not a wash of
+      // its colours. Once for a size, on a quarter of its pixels.
+      boxBlur(small, kRadius, 3);
       fBlurred = small.asImage();
     }
     skiff::scene::detail::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
   }
 
 private:
+  // The backdrop: made at a quarter of the size, and blurred there by this
+  // many of its pixels either way.
+  static constexpr float kShrink = 4.0f;
+  static constexpr int kRadius = 3;
+  // A box blur of premultiplied pixels, across then down, `passes` times.
+  static void boxBlur(skia::SkBitmap &bitmap, int radius, int passes) {
+    const int w = bitmap.width(), h = bitmap.height();
+    if (w <= 0 || h <= 0 || radius <= 0) {
+      return;
+    }
+    auto *pixels = static_cast<std::uint8_t *>(bitmap.getPixels());
+    const std::size_t stride = bitmap.rowBytes();
+    std::vector<std::uint8_t> line(static_cast<std::size_t>(std::max(w, h)) * 4u);
+    const int window = 2 * radius + 1;
+    const auto pass = [&](int count, int length, auto at) {
+      for (int i = 0; i < count; ++i) {
+        for (int j = 0; j < length; ++j) {
+          std::memcpy(&line[static_cast<std::size_t>(j) * 4u], at(i, j), 4);
+        }
+        std::array<int, 4> sum{};
+        for (int k = -radius; k <= radius; ++k) {
+          const auto j = static_cast<std::size_t>(std::clamp(k, 0, length - 1));
+          for (std::size_t c = 0; c < 4; ++c) {
+            sum[c] += line[j * 4u + c];
+          }
+        }
+        for (int j = 0; j < length; ++j) {
+          std::uint8_t *out = at(i, j);
+          for (std::size_t c = 0; c < 4; ++c) {
+            out[c] = static_cast<std::uint8_t>(sum[c] / window);
+          }
+          const auto add = static_cast<std::size_t>(std::min(j + radius + 1, length - 1));
+          const auto drop = static_cast<std::size_t>(std::max(j - radius, 0));
+          for (std::size_t c = 0; c < 4; ++c) {
+            sum[c] += line[add * 4u + c] - line[drop * 4u + c];
+          }
+        }
+      }
+    };
+    for (int p = 0; p < passes; ++p) {
+      pass(h, w, [&](int y, int x) { return pixels + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u; });
+      pass(w, h, [&](int x, int y) { return pixels + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * 4u; });
+    }
+  }
   // The picture, or the pattern, in pixels, width by height: covering them,
   // centred.
   [[nodiscard]] skia::Sp<skia::SkImage> drawn(int width, int height) const {
