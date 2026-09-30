@@ -42,6 +42,9 @@ struct TextAtom {
   // A picture in the line -- a custom emoji -- in place of its text (an em
   // space the program put in for the room it takes), not a pill.
   bool picture = false;
+  // What it is once unmarked, to be edited, where that is not what it reads
+  // as: a mention sent by its name, taken apart into its user's id.
+  std::string unmarked;
 };
 // Blocks: what the program makes of whole paragraphs -- a quote, say --
 // given as the field's `Blocks` parameter, a type with static members; the
@@ -110,13 +113,14 @@ public:
   }
   // An atom put in at the caret, over what is selected: `shown` drawn as a
   // pill for `target`, read as `plain`.
-  void insertAtom(std::string shown, std::string target, std::string plain, bool picture = false) {
+  void insertAtom(std::string shown, std::string target, std::string plain, bool picture = false,
+                  std::string unmarked = {}) {
     if (fSingle) {
       std::erase(shown, '\n');
     }
     const std::size_t size = shown.size();
     this->insert(std::move(shown));
-    fAtoms.push_back({fCaret - size, fCaret, std::move(target), std::move(plain), picture});
+    fAtoms.push_back({fCaret - size, fCaret, std::move(target), std::move(plain), picture, std::move(unmarked)});
     std::ranges::sort(fAtoms, {}, &Atom::first);
     this->markDamaged();
   }
@@ -513,9 +517,10 @@ private:
     fAtoms.erase(atom);
     fAnchor = fCaret = one.first;
     this->eraseText(one.first, one.last);
-    fText.insert(one.first, one.plain);
-    this->shiftAtoms(one.first, static_cast<std::ptrdiff_t>(one.plain.size()));
-    fCaret = fAnchor = one.first + one.plain.size();
+    const std::string &text = one.unmarked.empty() ? one.plain : one.unmarked;
+    fText.insert(one.first, text);
+    this->shiftAtoms(one.first, static_cast<std::ptrdiff_t>(text.size()));
+    fCaret = fAnchor = one.first + text.size();
     this->edited();
   }
   // Atoms at or past `from` moved by `by` bytes.
