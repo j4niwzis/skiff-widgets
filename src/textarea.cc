@@ -149,7 +149,14 @@ public:
         this->focused() && std::fmod(nowMs - fCaretSinceMs, 1060.0) < 530.0;
     if (shown != fCaretShown) {
       fCaretShown = shown;
-      this->markDamaged();
+      // A blink repaints the caret, where it was drawn -- not the whole
+      // field, which a blink left as it was.
+      if (fCaretRect.isEmpty()) {
+        this->markDamaged();
+      } else {
+        fState.fMovedDamage = skiff::scene::joined(fState.fMovedDamage, fCaretRect.makeOutset(1.0f, 1.0f));
+        skiff::scene::work::mark(fState.fId);
+      }
     }
   }
 
@@ -348,12 +355,16 @@ public:
       }
       this->drawLine(canvas, p, line, box.fLeft - shift, top + fFontSize, alpha);
     }
-    if (fCaretShown && !fLines.empty()) {
+    // Where the caret is, known while it is off too: a blink repaints it
+    // there.
+    if (this->focused() && !fLines.empty()) {
       const std::size_t at = this->lineOf(fCaret);
       const float x = this->xAt(p, fLines[at], fCaret) - shift;
       const float top = box.fTop + kPadY + static_cast<float>(static_cast<int>(at) - first) * lineHeight;
-      p.fillRect(skia::SkRect::MakeXYWH(box.fLeft + x, top + 1.0f, 1.2f, fFontSize + 3.0f),
-                 fTheme.fText, alpha);
+      fCaretRect = skia::SkRect::MakeXYWH(box.fLeft + x, top + 1.0f, 1.2f, fFontSize + 3.0f);
+      if (fCaretShown) {
+        p.fillRect(fCaretRect, fTheme.fText, alpha);
+      }
     }
     canvas->restoreToCount(save);
   }
@@ -698,6 +709,8 @@ private:
   mutable std::size_t fShownFor = 0;
   std::size_t fAnchor = 0;
   bool fCaretShown = false;
+  // Where the caret was last drawn: what a blink repaints.
+  skia::SkRect fCaretRect = skia::SkRect::MakeEmpty();
   double fCaretSinceMs = 0.0;
   double fNowMs = 0.0;
 };
