@@ -42,6 +42,7 @@ public:
       return;
     }
     fGradient = gradient;
+    fBlurred = nullptr;
     this->markDamaged();
   }
   void setPattern(std::shared_ptr<const Pattern> pattern, skia::SkColor colour) {
@@ -51,6 +52,7 @@ public:
     fPattern = std::move(pattern);
     fColour = colour;
     fDrawn = nullptr;
+    fBlurred = nullptr;
     this->markDamaged();
   }
   // A picture in place of the gradient and the pattern; none, none.
@@ -60,6 +62,7 @@ public:
     }
     fPicture = std::move(picture);
     fDrawn = nullptr;
+    fBlurred = nullptr;
     this->markDamaged();
   }
 
@@ -73,6 +76,7 @@ public:
     }
     const bool patterned = fPattern && fPattern->width > 0.0f && fPattern->height > 0.0f && !fPattern->steps.empty();
     if (!fPicture && !patterned) {
+      this->offerBackdrop(canvas, box);
       return;
     }
     // At the device's pixels, where the canvas is scaled for them.
@@ -83,6 +87,7 @@ public:
       fDrawn = this->drawn(width, height);
       fDrawnWidth = width;
       fDrawnHeight = height;
+      fBlurred = nullptr;
     }
     if (!fDrawn) {
       return;
@@ -90,6 +95,33 @@ public:
     skia::SkPaint paint;
     paint.setAlphaf(alpha);
     canvas->drawImageRect(fDrawn, box, skia::SkSamplingOptions(skia::SkFilterMode::kLinear), &paint);
+    this->offerBackdrop(canvas, box);
+  }
+
+  // Frosted nodes' backdrop: this wallpaper blurred -- made once for a size,
+  // at a sixteenth of it, and drawn back up smooth -- and where it is on the
+  // device. What frosts draws a piece of it, one image; nothing is blurred
+  // at a frame.
+  void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
+    if (!fBlurred) {
+      const int width = std::max(1, static_cast<int>(box.width() / 16.0f));
+      const int height = std::max(1, static_cast<int>(box.height() / 16.0f));
+      skia::SkBitmap small;
+      if (!small.tryAllocN32Pixels(width, height)) {
+        return;
+      }
+      small.eraseColor(0);
+      skia::SkCanvas into(small);
+      const skia::SkRect all = skia::SkRect::MakeWH(static_cast<float>(width), static_cast<float>(height));
+      if (fGradient && !fPicture) {
+        skiff::paint::verticalGradient(&into, all, fGradient->top, fGradient->bottom, 1.0f);
+      }
+      if (fDrawn) {
+        into.drawImageRect(fDrawn, all, skia::SkSamplingOptions(skia::SkFilterMode::kLinear, skia::SkMipmapMode::kLinear));
+      }
+      fBlurred = small.asImage();
+    }
+    skiff::scene::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
   }
 
 private:
@@ -139,6 +171,7 @@ private:
   std::shared_ptr<const Pattern> fPattern;
   skia::SkColor fColour = 0;
   skia::Sp<skia::SkImage> fDrawn;
+  skia::Sp<skia::SkImage> fBlurred;
   int fDrawnWidth = 0;
   int fDrawnHeight = 0;
 };
