@@ -229,11 +229,16 @@ public:
         // In a quote: the next line quoted too; an empty quoted line ends
         // the quote instead, as a chat's field does.
         const std::size_t start = this->lineStartOf(fCaret);
-        if (!this->hasSelection() && this->quotedAt(fCaret)) {
-          if (fCaret == start + 2 && (fCaret == fText.size() || fText[fCaret] == '\n')) {
-            this->erase(start, start + 2);
+        if (const int depth = this->quoteDepthAt(fCaret); !this->hasSelection() && depth > 0) {
+          const std::size_t marks = start + 2 * static_cast<std::size_t>(depth);
+          if (fCaret == marks && (fCaret == fText.size() || fText[fCaret] == '\n')) {
+            this->erase(start, marks);  // an empty quoted line: the quote ends
           } else {
-            this->insert("\n> ");
+            std::string next = "\n";
+            for (int level = 0; level < depth; ++level) {
+              next += "> ";
+            }
+            this->insert(next);
           }
         } else {
           this->insert("\n");
@@ -272,11 +277,11 @@ public:
     } else if (press.key == keys::kBackspace) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
-      } else if (const std::size_t start = this->lineStartOf(fCaret);
-                 fCaret == start + 2 && this->quotedAt(fCaret)) {
-        // Right after a quote's "> ": the line a quote no more, its text
-        // kept -- not one character of the mark taken.
-        this->erase(start, start + 2);
+      } else if (const std::size_t start = this->lineStartOf(fCaret), depth = static_cast<std::size_t>(this->quoteDepthAt(fCaret));
+                 depth > 0 && fCaret == start + 2 * depth) {
+        // Right after a quote's marks: a level of quote taken off, its text
+        // kept -- not one character of the mark.
+        this->erase(start + 2 * (depth - 1), start + 2 * depth);
       } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::last); atom != fAtoms.end()) {
         this->unmark(atom);
       } else if (fCaret > 0) {
@@ -372,10 +377,19 @@ public:
       // A line of a quote -- one that starts "> ", and what it wraps onto --
       // drawn as one: a bar at its start on a faint plate in the accent,
       // as a message draws its quotes.
-      if (!fMasked && this->quotedAt(line.fStart)) {
+      if (const int depth = fMasked ? 0 : this->quoteDepthAt(line.fStart); depth > 0) {
         p.fillRect(skia::SkRect::MakeXYWH(box.fLeft, top, box.width(), lineHeight),
                    (fTheme.fAccent & 0x00FFFFFFu) | 0x1F000000u, alpha);
-        p.fillRect(skia::SkRect::MakeXYWH(box.fLeft, top, 3.0f, lineHeight), fTheme.fAccent, alpha);
+        // A bar for each level, each in a colour of its own.
+        for (int level = 0; level < depth; ++level) {
+          const skia::SkColor c = fTheme.fAccent;
+          const unsigned a = (c >> 24) & 0xFF, r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+          const skia::SkColor turned = level % 3 == 1 ? (a << 24) | (g << 16) | (b << 8) | r
+                                       : level % 3 == 2 ? (a << 24) | (b << 16) | (r << 8) | g
+                                                        : c;
+          p.fillRect(skia::SkRect::MakeXYWH(box.fLeft + static_cast<float>(level) * 6.0f, top, 3.0f, lineHeight), turned,
+                     alpha);
+        }
       }
       this->drawLine(canvas, p, line, box.fLeft - shift, top + fFontSize, alpha);
     }
@@ -410,11 +424,18 @@ private:
     const std::size_t before = at == 0 ? std::string::npos : fText.rfind('\n', at - 1);
     return before == std::string::npos ? 0 : before + 1;
   }
-  // Whether the line an offset is on is a quote: it starts "> ".
-  [[nodiscard]] bool quotedAt(std::size_t at) const {
-    const std::size_t start = this->lineStartOf(at);
-    return fText.compare(start, 2, "> ") == 0;
+  // How deep in quotes the line an offset is on is: how many "> " it
+  // starts with.
+  [[nodiscard]] int quoteDepthAt(std::size_t at) const {
+    std::size_t mark = this->lineStartOf(at);
+    int depth = 0;
+    while (fText.compare(mark, 2, "> ") == 0) {
+      ++depth;
+      mark += 2;
+    }
+    return depth;
   }
+  [[nodiscard]] bool quotedAt(std::size_t at) const { return this->quoteDepthAt(at) > 0; }
   void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &p, const Line &line, float left, float y,
                 float alpha) const {
     std::size_t at = line.fStart;
@@ -463,9 +484,10 @@ private:
     // Never before or inside a quote's hidden "> ": to after it, or --
     // going back from it -- to the end of the line before.
     const std::size_t start = this->lineStartOf(offset);
-    if (offset < start + 2 && fText.compare(start, 2, "> ") == 0) {
+    const std::size_t marks = start + 2 * static_cast<std::size_t>(this->quoteDepthAt(offset));
+    if (offset < marks) {
       const bool back = forward.has_value() && !*forward;
-      return back && start > 0 ? start - 1 : start + 2;
+      return back && start > 0 ? start - 1 : marks;
     }
     return offset;
   }
@@ -512,7 +534,9 @@ private:
       std::size_t at = from;
       while (at < to) {
         if ((at == 0 || fText[at - 1] == '\n') && fText.compare(at, 2, "> ") == 0) {
-          at = std::min(to, at + 2);
+          while (at < to && fText.compare(at, 2, "> ") == 0) {
+            at = std::min(to, at + 2);  // every level's mark
+          }
           continue;
         }
         const std::size_t newline = fText.find('\n', at);
