@@ -226,7 +226,18 @@ public:
     };
     if (press.key == keys::kEnter) {
       if (!fSingle && (shift || !skiff::scene::acts(fOnSubmit))) {
-        this->insert("\n");
+        // In a quote: the next line quoted too; an empty quoted line ends
+        // the quote instead, as a chat's field does.
+        const std::size_t start = this->lineStartOf(fCaret);
+        if (!this->hasSelection() && this->quotedAt(fCaret)) {
+          if (fCaret == start + 2 && (fCaret == fText.size() || fText[fCaret] == '\n')) {
+            this->erase(start, start + 2);
+          } else {
+            this->insert("\n> ");
+          }
+        } else {
+          this->insert("\n");
+        }
       } else if (skiff::scene::acts(fOnSubmit)) {
         // Once for a press: Enter held a moment repeats, and each repeat
         // came before the program had emptied the field -- what was written
@@ -261,6 +272,11 @@ public:
     } else if (press.key == keys::kBackspace) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
+      } else if (const std::size_t start = this->lineStartOf(fCaret);
+                 fCaret == start + 2 && this->quotedAt(fCaret)) {
+        // Right after a quote's "> ": the line a quote no more, its text
+        // kept -- not one character of the mark taken.
+        this->erase(start, start + 2);
       } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::last); atom != fAtoms.end()) {
         this->unmark(atom);
       } else if (fCaret > 0) {
@@ -353,6 +369,14 @@ public:
         p.fillRounded(skia::SkRect::MakeLTRB(box.fLeft + x0, top, box.fLeft + x1, top + lineHeight),
                       2.0f, fTheme.fAccent, alpha * 0.35f);
       }
+      // A line of a quote -- one that starts "> ", and what it wraps onto --
+      // drawn as one: a bar at its start on a faint plate in the accent,
+      // as a message draws its quotes.
+      if (!fMasked && this->quotedAt(line.fStart)) {
+        p.fillRect(skia::SkRect::MakeXYWH(box.fLeft, top, box.width(), lineHeight),
+                   (fTheme.fAccent & 0x00FFFFFFu) | 0x1F000000u, alpha);
+        p.fillRect(skia::SkRect::MakeXYWH(box.fLeft, top, 3.0f, lineHeight), fTheme.fAccent, alpha);
+      }
       this->drawLine(canvas, p, line, box.fLeft - shift, top + fFontSize, alpha);
     }
     // Where the caret is, known while it is off too: a blink repaints it
@@ -381,6 +405,16 @@ private:
   };
 
   // A line: its text, its atoms' pieces as pills in the accent.
+  // Where the line an offset is on starts, after the newline before it.
+  [[nodiscard]] std::size_t lineStartOf(std::size_t at) const {
+    const std::size_t before = at == 0 ? std::string::npos : fText.rfind('\n', at - 1);
+    return before == std::string::npos ? 0 : before + 1;
+  }
+  // Whether the line an offset is on is a quote: it starts "> ".
+  [[nodiscard]] bool quotedAt(std::size_t at) const {
+    const std::size_t start = this->lineStartOf(at);
+    return fText.compare(start, 2, "> ") == 0;
+  }
   void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &p, const Line &line, float left, float y,
                 float alpha) const {
     std::size_t at = line.fStart;
