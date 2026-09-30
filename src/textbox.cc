@@ -59,6 +59,7 @@ public:
     }
     fText = std::move(text);
     fCaret = fText.size();
+    fAll = false;
     this->markDamaged();
   }
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
@@ -103,6 +104,7 @@ public:
   void onText(skiff::scene::phase::target, const skiff::scene::text::commit &typed,
               skiff::scene::Reply &reply) {
     if (!typed.text.empty()) {
+      this->takeAll();
       fText.insert(fCaret, typed.text);
       fCaret += typed.text.size();
       std::invoke(fOnChanged, std::string_view(fText));
@@ -125,6 +127,56 @@ public:
   void onKey(skiff::scene::phase::target, const skiff::scene::key::down &press,
              skiff::scene::Reply &reply) {
     namespace keys = skiff::scene::keys;
+    const bool control = press.modifiers.has<skiff::scene::modifier::control>();
+    // The clipboard, as in every field: Ctrl+V pastes at the caret (over
+    // all of it where all is selected), newlines as spaces in a line;
+    // Ctrl+A selects all of it, and Ctrl+C and Ctrl+X copy and cut that.
+    // Nothing selected, Ctrl+C is not this field's: the window may copy
+    // what is selected elsewhere.
+    if (control && press.key == keys::kV) {
+      std::string pasted = skiff::scene::clipboardText();
+      std::ranges::replace(pasted, '\n', ' ');
+      std::erase(pasted, '\r');
+      this->takeAll();
+      fText.insert(fCaret, pasted);
+      fCaret += pasted.size();
+      std::invoke(fOnChanged, std::string_view(fText));
+      this->markDamaged();
+      reply.handle();
+      return;
+    }
+    if (control && press.key == keys::kA) {
+      fAll = !fText.empty();
+      this->markDamaged();
+      reply.handle();
+      return;
+    }
+    if (control && (press.key == keys::kC || press.key == keys::kX)) {
+      if (!fAll || fMasked) {
+        return;
+      }
+      skiff::scene::setClipboardText(fText);
+      if (press.key == keys::kX) {
+        this->takeAll();
+        std::invoke(fOnChanged, std::string_view(fText));
+      }
+      this->markDamaged();
+      reply.handle();
+      return;
+    }
+    // All selected: a Backspace or Delete takes all of it; a move lets the
+    // selection go.
+    if (fAll && (press.key == keys::kBackspace || press.key == keys::kDelete)) {
+      this->takeAll();
+      std::invoke(fOnChanged, std::string_view(fText));
+      this->markDamaged();
+      reply.handle();
+      return;
+    }
+    if (fAll) {
+      fAll = false;
+      this->markDamaged();
+    }
     if (press.key == keys::kBackspace) {
       if (fCaret > 0) {
         const std::size_t eraseFrom = previousCodepoint(fText, fCaret);
@@ -230,6 +282,13 @@ public:
         0.0f, fState.fBounds.fRight - textLeft - fTheme.fPaddingX - fTrailingInset);
     const std::string beforeCaret = shownAs(fText.substr(0, fCaret) + fComposition);
     const std::string shown = beforeCaret + shownAs(fText.substr(fCaret));
+    // All of it selected: on a plate of the accent, as a selection is.
+    if (fAll && !shown.empty()) {
+      const float wide = std::min(room, p.measure(shown, fTheme.fFontSize));
+      p.fillRounded(skia::SkRect::MakeXYWH(textLeft - 1.0f, fState.fBounds.centerY() - fTheme.fFontSize * 0.75f, wide + 2.0f,
+                                           fTheme.fFontSize * 1.5f),
+                    2.0f, fTheme.fAccent, alpha * 0.35f);
+    }
     if (shown.empty()) {
       p.text(fPlaceholder, textLeft, baseline, fTheme.fFontSize,
              fTheme.fTextFaint, alpha * 0.6f);
@@ -250,6 +309,15 @@ public:
   }
 
 private:
+  // All of it selected: taken out, the caret at the start.
+  void takeAll() {
+    if (!fAll) {
+      return;
+    }
+    fAll = false;
+    fText.clear();
+    fCaret = 0;
+  }
   // What is drawn for some of the text: itself, or a dot per character.
   [[nodiscard]] std::string shownAs(std::string_view text) const {
     if (!fMasked) {
@@ -292,6 +360,7 @@ private:
   std::string fText;
   std::string fComposition;
   std::size_t fCaret = 0;
+  bool fAll = false;  // all of the text selected, by Ctrl+A
   int fCompositionSelectionStart = 0;
   int fCompositionSelectionLength = 0;
   bool fCaretShown = false;
