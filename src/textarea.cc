@@ -460,6 +460,13 @@ private:
         return after ? one.last : one.first;
       }
     }
+    // Never before or inside a quote's hidden "> ": to after it, or --
+    // going back from it -- to the end of the line before.
+    const std::size_t start = this->lineStartOf(offset);
+    if (offset < start + 2 && fText.compare(start, 2, "> ") == 0) {
+      const bool back = forward.has_value() && !*forward;
+      return back && start > 0 ? start - 1 : start + 2;
+    }
     return offset;
   }
   // An atom unmarked: its text what it reads plain, the caret after it.
@@ -499,7 +506,21 @@ private:
   // each character.
   [[nodiscard]] std::string shown(std::size_t from, std::size_t to) const {
     if (!fMasked) {
-      return fText.substr(from, to - from);
+      // A quote's "> " at the start of a line is not drawn, and takes no
+      // room: the line is shown as a quote instead, as Telegram's field.
+      std::string out;
+      std::size_t at = from;
+      while (at < to) {
+        if ((at == 0 || fText[at - 1] == '\n') && fText.compare(at, 2, "> ") == 0) {
+          at = std::min(to, at + 2);
+          continue;
+        }
+        const std::size_t newline = fText.find('\n', at);
+        const std::size_t stop = newline == std::string::npos ? to : std::min(to, newline + 1);
+        out.append(fText, at, stop - at);
+        at = stop;
+      }
+      return out;
     }
     std::string out;
     for (std::size_t at = from; at < to; at = next(fText, at)) {
