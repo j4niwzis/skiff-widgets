@@ -132,7 +132,15 @@ public:
   [[nodiscard]] bool acceptsInput() const { return true; }
   // A text field is what a press gives the focus to.
   [[nodiscard]] bool takesFocusOnPress() const { return true; }
-  [[nodiscard]] bool settling() const { return this->focused(); }
+  // The caret blinks, 530 on and 530 off: a frame at each turn, asked for
+  // when it is due -- not a frame at a time while it is focused.
+  [[nodiscard]] double wakeAt() const {
+    if (!this->focused()) {
+      return std::numeric_limits<double>::infinity();
+    }
+    const double since = fNowMs - fCaretSinceMs;
+    return fNowMs + (530.0 - std::fmod(since, 530.0));
+  }
   void update(double nowMs) {
     fNowMs = nowMs;
     const bool shown =
