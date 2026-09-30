@@ -55,6 +55,16 @@ public:
     fBlurred = nullptr;
     this->markDamaged();
   }
+  // How opaque all of it is drawn: a window see-through as a whole shows
+  // the desktop through its chat's background too. Taken as the paint's
+  // alpha of what it draws already -- no layer.
+  void setOpacity(float opacity) {
+    if (opacity == fOpacity) {
+      return;
+    }
+    fOpacity = opacity;
+    this->markDamaged();
+  }
   // A picture in place of the gradient and the pattern; none, none.
   void setPicture(skia::Sp<skia::SkImage> picture) {
     if (picture == fPicture) {
@@ -71,6 +81,7 @@ public:
     if (box.isEmpty()) {
       return;
     }
+    alpha *= fOpacity;
     if (fGradient && !fPicture) {
       skiff::paint::verticalGradient(canvas, box, fGradient->top, fGradient->bottom, alpha);
     }
@@ -172,6 +183,7 @@ private:
   skia::SkColor fColour = 0;
   skia::Sp<skia::SkImage> fDrawn;
   skia::Sp<skia::SkImage> fBlurred;
+  float fOpacity = 1.0f;
   int fDrawnWidth = 0;
   int fDrawnHeight = 0;
 };
