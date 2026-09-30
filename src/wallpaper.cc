@@ -65,6 +65,17 @@ public:
     fOpacity = opacity;
     this->markDamaged();
   }
+  // How much the frost blurs: by this many of its quarter-size pixels, 0 not
+  // at all. Made again once, where it changes.
+  void setBlur(int radius) {
+    radius = std::max(0, radius);
+    if (radius == fRadius) {
+      return;
+    }
+    fRadius = radius;
+    fBlurred = nullptr;
+    this->markDamaged();
+  }
   // A picture in place of the gradient and the pattern; none, none.
   void setPicture(skia::Sp<skia::SkImage> picture) {
     if (picture == fPicture) {
@@ -133,7 +144,7 @@ public:
       // Blurred for real, a little -- a box three times over, near enough a
       // Gaussian: the picture still seen through the frost, not a wash of
       // its colours. Once for a size, on a quarter of its pixels.
-      boxBlur(small, kRadius, 3);
+      boxBlur(small, fRadius, 3);
       fBlurred = small.asImage();
     }
     skiff::scene::detail::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
@@ -232,6 +243,7 @@ private:
   skia::Sp<skia::SkImage> fDrawn;
   skia::Sp<skia::SkImage> fBlurred;
   float fOpacity = 1.0f;
+  int fRadius = kRadius;
   int fDrawnWidth = 0;
   int fDrawnHeight = 0;
 };
