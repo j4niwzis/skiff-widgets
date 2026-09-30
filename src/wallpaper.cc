@@ -30,26 +30,49 @@ struct Pattern {
   std::vector<PatternStep> steps;
 };
 
-// A chat's wallpaper, as Telegram's: the node's own gradient (or fill), as
-// any node paints one, and over it a pattern in a colour of its own, scaled
-// to cover it and centred. The pattern is drawn once for a size, into
-// pixels kept: its shapes are many, and what is behind a list is repainted
-// at every step of a scroll.
+// A chat's wallpaper, as Telegram's: a gradient and over it a pattern in a
+// colour of its own -- or a picture of the user's -- scaled to cover it and
+// centred; or nothing, what is behind it showing (a plain colour). The
+// pattern or the picture is drawn once for a size, into pixels kept: what is
+// behind a list is repainted at every step of a scroll.
 class Wallpaper : public skiff::scene::Node {
 public:
+  void setGradient(std::optional<skiff::scene::Gradient> gradient) {
+    if (gradient == fGradient) {
+      return;
+    }
+    fGradient = gradient;
+    this->markDamaged();
+  }
   void setPattern(std::shared_ptr<const Pattern> pattern, skia::SkColor colour) {
+    if (pattern == fPattern && colour == fColour) {
+      return;
+    }
     fPattern = std::move(pattern);
     fColour = colour;
     fDrawn = nullptr;
     this->markDamaged();
   }
-
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    if (!fPattern || fPattern->width <= 0.0f || fPattern->height <= 0.0f || fPattern->steps.empty()) {
+  // A picture in place of the gradient and the pattern; none, none.
+  void setPicture(skia::Sp<skia::SkImage> picture) {
+    if (picture == fPicture) {
       return;
     }
+    fPicture = std::move(picture);
+    fDrawn = nullptr;
+    this->markDamaged();
+  }
+
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
     const skia::SkRect &box = fState.fBounds;
     if (box.isEmpty()) {
+      return;
+    }
+    if (fGradient && !fPicture) {
+      skiff::paint::verticalGradient(canvas, box, fGradient->top, fGradient->bottom, alpha);
+    }
+    const bool patterned = fPattern && fPattern->width > 0.0f && fPattern->height > 0.0f && !fPattern->steps.empty();
+    if (!fPicture && !patterned) {
       return;
     }
     // At the device's pixels, where the canvas is scaled for them.
@@ -70,7 +93,8 @@ public:
   }
 
 private:
-  // The pattern in pixels, width by height: covering them, centred.
+  // The picture, or the pattern, in pixels, width by height: covering them,
+  // centred.
   [[nodiscard]] skia::Sp<skia::SkImage> drawn(int width, int height) const {
     skia::SkBitmap bitmap;
     if (!bitmap.tryAllocN32Pixels(width, height)) {
@@ -78,6 +102,17 @@ private:
     }
     bitmap.eraseColor(0);
     skia::SkCanvas into(bitmap);
+    if (fPicture) {
+      const float w = static_cast<float>(fPicture->width()), h = static_cast<float>(fPicture->height());
+      if (w <= 0.0f || h <= 0.0f) {
+        return nullptr;
+      }
+      const float cover = std::max(static_cast<float>(width) / w, static_cast<float>(height) / h);
+      const skia::SkRect at = skia::SkRect::MakeXYWH((static_cast<float>(width) - w * cover) * 0.5f,
+                                                    (static_cast<float>(height) - h * cover) * 0.5f, w * cover, h * cover);
+      into.drawImageRect(fPicture, at, skia::SkSamplingOptions(skia::SkFilterMode::kLinear, skia::SkMipmapMode::kLinear));
+      return bitmap.asImage();
+    }
     const float cover = std::max(static_cast<float>(width) / fPattern->width, static_cast<float>(height) / fPattern->height);
     into.translate((static_cast<float>(width) - fPattern->width * cover) * 0.5f,
                    (static_cast<float>(height) - fPattern->height * cover) * 0.5f);
@@ -99,6 +134,8 @@ private:
     return bitmap.asImage();
   }
 
+  std::optional<skiff::scene::Gradient> fGradient;
+  skia::Sp<skia::SkImage> fPicture;
   std::shared_ptr<const Pattern> fPattern;
   skia::SkColor fColour = 0;
   skia::Sp<skia::SkImage> fDrawn;
