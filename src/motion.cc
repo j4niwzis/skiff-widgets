@@ -106,6 +106,8 @@ public:
   explicit SlideLayer(skia::SkColor sheet, Args &&...args)
       : fOver(std::forward<Args>(args)...) {
     fState.apply({.fill = true});
+    // Over what it slides over, all of it -- its sheet and what is on it.
+    fState.setFloats(true);
     fSheet.setColour(sheet);
   }
 
@@ -427,6 +429,8 @@ class Dialog : public skiff::scene::Node {
 public:
   Dialog() {
     fState.apply({.fill = true});
+    // Over the window, all of it -- its sheet and what is on it.
+    fState.setFloats(true);
     fScrim.setVisible(false);
     fSheet.setVisible(false);
     fSheet.apply({.cornerRadius = 12.0f});
