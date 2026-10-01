@@ -98,8 +98,9 @@ public:
     this->markDamaged();
   }
   void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    const float radius = fState.fCornerRadius;
-    const skia::SkRRect shape = skia::SkRRect::MakeRectXY(fState.fBounds, radius, radius);
+    // Its shape as its State says: its corner radius, or each corner's own
+    // -- as what it is behind says them.
+    const skia::SkRRect shape = skiff::scene::detail::roundedBox(fState, fState.fBounds);
     if (const Backdrop *one = fSource()) {
       drawBackdrop(canvas, *one, fBlur, shape, alpha);
     }
