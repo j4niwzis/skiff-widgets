@@ -455,6 +455,10 @@ public:
     fPlace = place;
     this->invalidateLayout();
   }
+  // Whether a press off it or Esc closes it: not, for one that must be
+  // answered before anything behind it is used (a passphrase asked at the
+  // start). The program closes it then.
+  void setDismissable(bool dismissable) { fDismissable = dismissable; }
 
   // The content up, not on its way out.
   [[nodiscard]] Content *shown() noexcept {
@@ -547,7 +551,9 @@ public:
   void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
                  skiff::scene::PointerReply &reply) {
     if (this->shown() != nullptr && reply.fTarget == fScrim.id()) {
-      this->close();
+      if (fDismissable) {
+        this->close();
+      }
       reply.handle();
     }
   }
@@ -555,7 +561,9 @@ public:
   void onKey(skiff::scene::phase::bubble, const skiff::scene::key::down &press,
              skiff::scene::Reply &reply) {
     if (this->shown() != nullptr && press.key == skiff::scene::keys::kEscape) {
-      this->close();
+      if (fDismissable) {
+        this->close();
+      }
       reply.handle();
     }
   }
@@ -587,6 +595,7 @@ private:
   float fHeight = 560.0f;
   bool fFitsContent = false;
   DialogPlace fPlace = dialog_place::centred{};
+  bool fDismissable = true;
   bool fClosing = false;
 };
 
