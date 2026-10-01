@@ -13,7 +13,7 @@ export namespace skiff::widgets {
 // on an empty part of the panel does not go through to what is under it.
 class Sheet : public skiff::nodes::Box<> {
 public:
-  explicit Sheet(skia::SkColor colour) : skiff::nodes::Box<>(colour) {}
+  explicit Sheet(skia::SkColor colour) : skiff::nodes::Box<>(colour) { fState.setFloats(true); }
   [[nodiscard]] bool acceptsInput() const { return true; }
 };
 
