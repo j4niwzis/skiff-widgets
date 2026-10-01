@@ -30,12 +30,107 @@ struct Pattern {
   std::vector<PatternStep> steps;
 };
 
+// What lies behind a window's contents, blurred: its picture at the
+// device's pixels, where on the device it is, and the same blurred by each
+// other amount asked (0 to 1). A Wallpaper makes it; a BackdropPane draws
+// what of it is under it.
+struct Backdrop {
+  skia::Sp<skia::SkImage> image;
+  skia::SkRect device = skia::SkRect::MakeEmpty();
+  std::vector<std::pair<float, skia::Sp<skia::SkImage>>> blurred;
+};
+// The backdrop blurred as much as `blur` says, where that is made; below 0,
+// or not made, its own.
+[[nodiscard]] inline const skia::Sp<skia::SkImage> &backdropImage(const Backdrop &one, float blur) {
+  if (blur >= 0.0f) {
+    for (const auto &[amount, image] : one.blurred) {
+      if (std::abs(amount - blur) < 1e-4f && image) {
+        return image;
+      }
+    }
+  }
+  return one.image;
+}
+// The piece of a backdrop under a shape, as blurred as `blur` says: one
+// image drawn, clipped to the shape -- at the device's pixels, put down as it
+// is; smoothed only where it is smaller than the device.
+inline void drawBackdrop(skia::SkCanvas *canvas, const Backdrop &one, float blur, const skia::SkRRect &shape, float alpha) {
+  const skia::Sp<skia::SkImage> &image = backdropImage(one, blur);
+  skia::SkMatrix inverse;
+  if (!image || one.device.isEmpty() || !canvas->getTotalMatrix().invert(&inverse)) {
+    return;
+  }
+  const int saved = canvas->save();
+  canvas->clipRRect(shape, true);
+  skia::SkPaint paint;
+  paint.setAlphaf(alpha);
+  const bool sharp = std::abs(static_cast<float>(image->width()) - one.device.width()) <= 1.0f;
+  canvas->drawImageRect(image, inverse.mapRect(one.device),
+                        skia::SkSamplingOptions(sharp ? skia::SkFilterMode::kNearest : skia::SkFilterMode::kLinear), &paint);
+  canvas->restoreToCount(saved);
+}
+// Where a backdrop comes from: a value called as it is drawn, as an Image's
+// source is -- the program's, giving the one its wallpaper offered.
+template <class Source>
+concept BackdropSource = std::copy_constructible<Source> && requires(const Source &source) {
+  { source() } -> std::convertible_to<const Backdrop *>;
+};
+// What of the backdrop is under it on the screen, in its box and corner
+// radius: frosted glass, behind what a node holds -- its first part, filling
+// it. As blurred as setBlur says (0 to 1); below 0, the backdrop's own.
+template <BackdropSource Source> class BackdropPane : public skiff::scene::Node {
+public:
+  explicit BackdropPane(Source source, float blur = -1.0f) : fSource(std::move(source)), fBlur(blur) {}
+  void setBlur(float blur) {
+    if (blur == fBlur) {
+      return;
+    }
+    fBlur = blur;
+    this->markDamaged();
+  }
+  // A colour over the frost, in the same shape: the plate of what it is
+  // behind -- which, frosted, has none of its own under it.
+  void setTint(std::optional<skia::SkColor> tint) {
+    if (tint == fTint) {
+      return;
+    }
+    fTint = tint;
+    this->markDamaged();
+  }
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+    const float radius = fState.fCornerRadius;
+    const skia::SkRRect shape = skia::SkRRect::MakeRectXY(fState.fBounds, radius, radius);
+    if (const Backdrop *one = fSource()) {
+      drawBackdrop(canvas, *one, fBlur, shape, alpha);
+    }
+    if (fTint) {
+      skia::SkPaint paint;
+      paint.setAntiAlias(true);
+      paint.setColor(*fTint);
+      paint.setAlphaf(paint.getAlphaf() * alpha);
+      canvas->drawRRect(shape, paint);
+    }
+  }
+
+private:
+  Source fSource;
+  float fBlur;
+  std::optional<skia::SkColor> fTint;
+};
+
+// Where a wallpaper's backdrop goes: nowhere, unless the program says.
+struct NoBackdropOut {
+  static void offer(const Backdrop &) {}
+};
+
 // A chat's wallpaper, as Telegram's: a gradient and over it a pattern in a
 // colour of its own -- or a picture of the user's -- scaled to cover it and
 // centred; or nothing, what is behind it showing (a plain colour). The
 // pattern or the picture is drawn once for a size, into pixels kept: what is
 // behind a list is repainted at every step of a scroll.
-class Wallpaper : public skiff::scene::Node {
+// What it blurs of itself, for what frosts, is offered to Out::offer(backdrop)
+// as it is drawn: a callback by its type.
+template <class Out = NoBackdropOut> class Wallpaper : public skiff::scene::Node {
 public:
   void setGradient(std::optional<skiff::scene::Gradient> gradient) {
     if (gradient == fGradient) {
@@ -260,7 +355,7 @@ public:
                                                                        : upTo(this->blurredAt(amount, box), fullWidth, fullHeight));
       }
     }
-    skiff::scene::detail::backdrop() = {fBackdropFull ? fBackdropFull : fBlurred, device, fExtra};
+    Out::offer(Backdrop{fBackdropFull ? fBackdropFull : fBlurred, device, fExtra});
   }
 
 private:
