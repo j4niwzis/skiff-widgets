@@ -176,7 +176,9 @@ public:
   void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
     if (!fBlurred) {
       fBackdropFull = nullptr;
-      const float shrink = 1.0f + fAmount * 4.0f;
+      // Up to three times as blurred as it once went: shrunk to a
+      // thirteenth at the most, blurred there.
+      const float shrink = 1.0f + fAmount * 12.0f;
       const int width = std::max(1, static_cast<int>(box.width() / shrink));
       const int height = std::max(1, static_cast<int>(box.height() / shrink));
       skia::SkBitmap small;
