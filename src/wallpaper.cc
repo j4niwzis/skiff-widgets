@@ -162,7 +162,10 @@ public:
     }
     skia::SkPaint paint;
     paint.setAlphaf(alpha);
-    canvas->drawImageRect(fDrawn, box, skia::SkSamplingOptions(skia::SkFilterMode::kLinear), &paint);
+    // Made at the device's pixels: put down as it is, not filtered again at
+    // every repaint -- a bilinear pass over the whole wallpaper was most of
+    // a frame on a software canvas.
+    canvas->drawImageRect(fDrawn, box, skia::SkSamplingOptions(skia::SkFilterMode::kNearest), &paint);
     this->offerBackdrop(canvas, box);
   }
 
@@ -172,6 +175,7 @@ public:
   // at a frame.
   void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
     if (!fBlurred) {
+      fBackdropFull = nullptr;
       const float shrink = 1.0f + fAmount * 4.0f;
       const int width = std::max(1, static_cast<int>(box.width() / shrink));
       const int height = std::max(1, static_cast<int>(box.height() / shrink));
@@ -194,7 +198,23 @@ public:
       boxBlur(small, fAmount > 0.0f ? 1 : 0, 3);
       fBlurred = small.asImage();
     }
-    skiff::scene::detail::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
+    // And drawn back up to the device's pixels, once: what frosts puts down
+    // a piece of it as it is -- the blurred quarter was scaled up, bilinear,
+    // under every frosted panel at every repaint.
+    const skia::SkRect device = canvas->getTotalMatrix().mapRect(box);
+    const int fullWidth = std::max(1, static_cast<int>(std::ceil(device.width())));
+    const int fullHeight = std::max(1, static_cast<int>(std::ceil(device.height())));
+    if (fBlurred && (!fBackdropFull || fBackdropFull->width() != fullWidth || fBackdropFull->height() != fullHeight)) {
+      skia::SkBitmap full;
+      if (full.tryAllocN32Pixels(fullWidth, fullHeight)) {
+        full.eraseColor(0);
+        skia::SkCanvas into(full);
+        into.drawImageRect(fBlurred, skia::SkRect::MakeWH(static_cast<float>(fullWidth), static_cast<float>(fullHeight)),
+                           skia::SkSamplingOptions(skia::SkFilterMode::kLinear));
+        fBackdropFull = full.asImage();
+      }
+    }
+    skiff::scene::detail::backdrop() = {fBackdropFull ? fBackdropFull : fBlurred, device};
   }
 
 private:
@@ -289,6 +309,8 @@ private:
   skia::SkColor fColour = 0;
   skia::Sp<skia::SkImage> fDrawn;
   skia::Sp<skia::SkImage> fBlurred;
+  // The backdrop at the device's pixels: what frosted panels draw from.
+  skia::Sp<skia::SkImage> fBackdropFull;
   float fOpacity = 1.0f;
   // The look before a change, fading out; and the fade.
   std::optional<skiff::scene::Gradient> fOldGradient;
