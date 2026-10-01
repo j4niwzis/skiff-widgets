@@ -61,6 +61,9 @@ struct BlockLook {
   float indent = 0.0f;     // how far its lines stand in
   float right = 0.0f;      // room kept at their right
   bool monospace = false;  // drawn in the monospace face: code
+  // Not laid out at all: no line, no room, no caret in it -- a code block's
+  // closing fence, which a message does not show either.
+  bool collapsed = false;
 };
 // A line in view, for drawBehind: its paragraph's start, where it is drawn.
 struct ShownLine {
@@ -552,13 +555,26 @@ private:
       }
     }
     // Never before or inside a paragraph's hidden marks: to after them, or
-    // -- going back from them -- to the end of the line before.
+    // -- going back from them -- to the end of the line before. A paragraph
+    // all marks, or not laid out, has no place for the caret at all: it goes
+    // on past it, to the next paragraph or back to the one before -- the
+    // caret stood still on a code block's first line, sent back into its
+    // hidden fence each time it left.
     const std::size_t start = this->lineStartOf(offset);
-    const std::size_t marks = start + this->lookAt(start).hidden;
-    if (offset < marks) {
-      const bool back = forward.has_value() && !*forward;
-      return back && start > 0 ? start - 1 : marks;
+    const BlockLook look = this->lookAt(start);
+    const std::size_t marks = start + look.hidden;
+    const std::size_t newline = fText.find('\n', start);
+    const std::size_t end = newline == std::string::npos ? fText.size() : newline;
+    const bool back = forward.has_value() && !*forward;
+    if (look.collapsed || (look.hidden > 0 && marks >= end)) {
+      if (back && start > 0)
+        return this->outOfAtoms(start - 1, false);
+      if (newline != std::string::npos)
+        return this->outOfAtoms(newline + 1, true);
+      return start > 0 ? this->outOfAtoms(start - 1, false) : offset;
     }
+    if (offset < marks)
+      return back && start > 0 ? start - 1 : marks;
     return offset;
   }
   // An atom unmarked: its text what it reads plain, the caret after it.
@@ -759,6 +775,17 @@ private:
     std::size_t start = 0;
     while (true) {
       const BlockLook look = this->lookAt(start);
+      // Not laid out: on to the next paragraph, no line made for it.
+      if (look.collapsed) {
+        const std::size_t newline = fText.find('\n', start);
+        if (newline == std::string::npos) {
+          if (fLines.empty())
+            fLines.push_back({start, fText.size()});
+          break;
+        }
+        start = newline + 1;
+        continue;
+      }
       monospace = look.monospace;
       room = look.indent + look.right > 0.0f ? std::max(width - look.indent - look.right, fFontSize * 2.0f) : width;
       const std::size_t newline = fText.find('\n', start);
