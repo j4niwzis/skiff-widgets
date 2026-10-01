@@ -60,6 +60,7 @@ struct BlockLook {
   std::size_t hidden = 0;  // marks at the paragraph's start: not drawn
   float indent = 0.0f;     // how far its lines stand in
   float right = 0.0f;      // room kept at their right
+  bool monospace = false;  // drawn in the monospace face: code
 };
 // A line in view, for drawBehind: its paragraph's start, where it is drawn.
 struct ShownLine {
@@ -476,14 +477,20 @@ private:
   }
   // How far a line's text stands in: its paragraph's indent.
   [[nodiscard]] float indentOf(const Line &line) const { return this->lookAt(line.fStart).indent; }
+  // What a line is drawn and measured with: the monospace face where its
+  // paragraph is code, else the field's own.
+  [[nodiscard]] skiff::paint::Painter painterFor(const skiff::paint::Painter &p, const Line &line) const {
+    return skiff::paint::Painter(p.canvas(), *skiff::paint::defaultFont(), this->lookAt(line.fStart).monospace);
+  }
   // A line: its text, its atoms' pieces as pills in the accent.
   // Where the line an offset is on starts, after the newline before it.
   [[nodiscard]] std::size_t lineStartOf(std::size_t at) const {
     const std::size_t before = at == 0 ? std::string::npos : fText.rfind('\n', at - 1);
     return before == std::string::npos ? 0 : before + 1;
   }
-  void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &p, const Line &line, float left, float y,
+  void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &field, const Line &line, float left, float y,
                 float alpha) const {
+    const skiff::paint::Painter p = this->painterFor(field, line);
     std::size_t at = line.fStart;
     const auto plain = [&](std::size_t to) {
       if (to > at) {
@@ -598,7 +605,8 @@ private:
     }
     return out;
   }
-  [[nodiscard]] float xAt(const skiff::paint::Painter &p, const Line &line, std::size_t offset) const {
+  [[nodiscard]] float xAt(const skiff::paint::Painter &field, const Line &line, std::size_t offset) const {
+    const skiff::paint::Painter p = this->painterFor(field, line);
     return this->indentOf(line) + p.measure(this->shown(line.fStart, std::min(offset, line.fEnd)), fFontSize);
   }
   // Where the text goes: its bounds within its padding at the sides, as a
@@ -723,16 +731,18 @@ private:
       fLines.push_back({0, fText.size()});
       return;
     }
-    const skiff::paint::Painter p(nullptr, *font);
     // A block's lines narrower: in by their indent, its room at the right
-    // kept.
+    // kept; code measured in the monospace face.
     float room = width;
+    bool monospace = false;
     const auto fits = [&](std::size_t from, std::size_t to) {
+      const skiff::paint::Painter p(nullptr, *font, monospace);
       return p.measure(this->shown(from, to), fFontSize) <= room;
     };
     std::size_t start = 0;
     while (true) {
       const BlockLook look = this->lookAt(start);
+      monospace = look.monospace;
       room = look.indent + look.right > 0.0f ? std::max(width - look.indent - look.right, fFontSize * 2.0f) : width;
       const std::size_t newline = fText.find('\n', start);
       const std::size_t stop = newline == std::string::npos ? fText.size() : newline;
