@@ -678,7 +678,9 @@ private:
       std::erase(typed, '\n');
     }
     // A character typed where the last one went: the same step.
-    const bool one = !typed.empty() && typed.size() <= 4 && typed != "\n" && !this->hasSelection();
+    // As tdesktop's field (lib_ui input_field.cpp): Space, Enter, Backspace and
+    // Delete each an edit block of their own; letters typed in a row one.
+    const bool one = !typed.empty() && typed.size() <= 4 && typed != "\n" && typed != " " && !this->hasSelection();
     this->remember(one && fTypingAt == fCaret);
     if (this->hasSelection()) {
       this->erase(this->low(), this->high());
@@ -694,8 +696,8 @@ private:
     this->edited();
   }
   void erase(std::size_t from, std::size_t to) {
-    // A character erased back from where the last erasing began: the same step.
-    this->remember(!this->hasSelection() && fErasingAt == to && to - from <= 4);
+    // Each erasing a step of its own, as tdesktop's Backspace and Delete.
+    this->remember(false);
     this->eraseText(from, to);
     fCaret = fAnchor = from;
     fErasingAt = from;
