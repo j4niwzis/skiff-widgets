@@ -84,6 +84,8 @@ struct NoBlocks {
   [[nodiscard]] static std::optional<TextEdit> key(std::string_view, std::size_t, const skiff::scene::key::down &) {
     return std::nullopt;
   }
+  // What is typed, as it is put in: as it is.
+  [[nodiscard]] static std::optional<TextEdit> typed(std::string_view, std::size_t, std::string_view) { return std::nullopt; }
 };
 template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures, class Blocks = NoBlocks>
 class TextArea : public skiff::scene::Node {
@@ -252,10 +254,31 @@ public:
   using Node::onText;
   void onText(skiff::scene::phase::target, const skiff::scene::text::commit &typed,
               skiff::scene::Reply &reply) {
+    // The program's blocks first, as for a key: what is typed may become
+    // something else where it goes -- "--" a dash.
+    if constexpr (requires { Blocks::typed(std::string_view(fText), fCaret, typed.text); }) {
+      if (!typed.text.empty() && !fMasked && !fSingle && !this->hasSelection()) {
+        if (std::optional<TextEdit> edit = Blocks::typed(fText, fCaret, typed.text)) {
+          this->applyEdit(*edit);
+          reply.handle();
+          return;
+        }
+      }
+    }
     if (!typed.text.empty()) {
       this->insert(std::string(typed.text));
     }
     reply.handle();
+  }
+  // A block's edit put in: a step of its own to undo.
+  void applyEdit(const TextEdit &edit) {
+    this->remember(false);
+    this->breakRun();
+    this->eraseText(edit.from, edit.to);
+    fText.insert(edit.from, edit.with);
+    this->shiftAtoms(edit.from, static_cast<std::ptrdiff_t>(edit.with.size()));
+    fCaret = fAnchor = this->outOfAtoms(std::min(edit.caret, fText.size()), true);
+    this->edited();
   }
 
   using Node::onKey;
@@ -295,13 +318,7 @@ public:
     // them -- Enter in a quote -- is theirs.
     if (!fMasked && !fSingle && !this->hasSelection()) {
       if (std::optional<TextEdit> edit = Blocks::key(fText, fCaret, press)) {
-        this->remember(false);
-        this->breakRun();
-        this->eraseText(edit->from, edit->to);
-        fText.insert(edit->from, edit->with);
-        this->shiftAtoms(edit->from, static_cast<std::ptrdiff_t>(edit->with.size()));
-        fCaret = fAnchor = this->outOfAtoms(std::min(edit->caret, fText.size()), true);
-        this->edited();
+        this->applyEdit(*edit);
         reply.handle();
         return;
       }
