@@ -44,6 +44,7 @@ public:
     this->keepOld();
     fGradient = gradient;
     fBlurred = nullptr;
+    fExtra.clear();
     this->markDamaged();
   }
   void setPattern(std::shared_ptr<const Pattern> pattern, skia::SkColor colour) {
@@ -55,6 +56,7 @@ public:
     fColour = colour;
     fDrawn = nullptr;
     fBlurred = nullptr;
+    fExtra.clear();
     this->markDamaged();
   }
   // How opaque all of it is drawn: a window see-through as a whole shows
@@ -78,6 +80,24 @@ public:
     }
     fAmount = amount;
     fBlurred = nullptr;
+    fExtra.clear();
+    this->markDamaged();
+  }
+  // The other blurs asked of the backdrop (0 to 1), besides its own: what
+  // frosts by an amount of its own -- bubbles, panels, a chat's lines --
+  // finds it made, once for a size, as the backdrop's own is.
+  void setBlurs(std::vector<float> amounts) {
+    for (float &each : amounts) {
+      each = std::clamp(each, 0.0f, 1.0f);
+    }
+    std::ranges::sort(amounts);
+    const auto [first, last] = std::ranges::unique(amounts);
+    amounts.erase(first, last);
+    if (amounts == fAmounts) {
+      return;
+    }
+    fAmounts = std::move(amounts);
+    fExtra.clear();
     this->markDamaged();
   }
   // A picture in place of the gradient and the pattern; none, none.
@@ -89,6 +109,7 @@ public:
     fPicture = std::move(picture);
     fDrawn = nullptr;
     fBlurred = nullptr;
+    fExtra.clear();
     this->markDamaged();
   }
 
@@ -156,6 +177,7 @@ public:
       fDrawnWidth = width;
       fDrawnHeight = height;
       fBlurred = nullptr;
+    fExtra.clear();
     }
     if (!fDrawn) {
       return;
@@ -173,32 +195,52 @@ public:
   // at a quarter of it, and drawn back up smooth -- and where it is on the
   // device. What frosts draws a piece of it, one image; nothing is blurred
   // at a frame.
+  // This wallpaper shrunk as much as `amount` (0 to 1) says, and blurred
+  // there: up to three times as blurred as it once went -- shrunk to a
+  // thirteenth at the most.
+  [[nodiscard]] skia::Sp<skia::SkImage> blurredAt(float amount, const skia::SkRect &box) const {
+    const float shrink = 1.0f + amount * 12.0f;
+    const int width = std::max(1, static_cast<int>(box.width() / shrink));
+    const int height = std::max(1, static_cast<int>(box.height() / shrink));
+    skia::SkBitmap small;
+    if (!small.tryAllocN32Pixels(width, height)) {
+      return nullptr;
+    }
+    small.eraseColor(0);
+    skia::SkCanvas into(small);
+    const skia::SkRect all = skia::SkRect::MakeWH(static_cast<float>(width), static_cast<float>(height));
+    if (fGradient && !fPicture) {
+      skiff::paint::verticalGradient(&into, all, fGradient->top, fGradient->bottom, 1.0f);
+    }
+    if (fDrawn) {
+      into.drawImageRect(fDrawn, all, skia::SkSamplingOptions(skia::SkFilterMode::kLinear, skia::SkMipmapMode::kLinear));
+    }
+    // Blurred for real, a little -- a box three times over, near enough a
+    // Gaussian: the picture still seen through the frost, not a wash of
+    // its colours. Once for a size, on a fraction of its pixels.
+    boxBlur(small, amount > 0.0f ? 1 : 0, 3);
+    return small.asImage();
+  }
+  // A blurred copy drawn back up to the device's pixels, once.
+  [[nodiscard]] static skia::Sp<skia::SkImage> upTo(const skia::Sp<skia::SkImage> &blurred, int fullWidth, int fullHeight) {
+    skia::SkBitmap full;
+    if (!blurred || !full.tryAllocN32Pixels(fullWidth, fullHeight)) {
+      return nullptr;
+    }
+    full.eraseColor(0);
+    skia::SkCanvas into(full);
+    into.drawImageRect(blurred, skia::SkRect::MakeWH(static_cast<float>(fullWidth), static_cast<float>(fullHeight)),
+                       skia::SkSamplingOptions(skia::SkFilterMode::kLinear));
+    return full.asImage();
+  }
+
   void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
     if (!fBlurred) {
       fBackdropFull = nullptr;
-      // Up to three times as blurred as it once went: shrunk to a
-      // thirteenth at the most, blurred there.
-      const float shrink = 1.0f + fAmount * 12.0f;
-      const int width = std::max(1, static_cast<int>(box.width() / shrink));
-      const int height = std::max(1, static_cast<int>(box.height() / shrink));
-      skia::SkBitmap small;
-      if (!small.tryAllocN32Pixels(width, height)) {
+      fBlurred = this->blurredAt(fAmount, box);
+      if (!fBlurred) {
         return;
       }
-      small.eraseColor(0);
-      skia::SkCanvas into(small);
-      const skia::SkRect all = skia::SkRect::MakeWH(static_cast<float>(width), static_cast<float>(height));
-      if (fGradient && !fPicture) {
-        skiff::paint::verticalGradient(&into, all, fGradient->top, fGradient->bottom, 1.0f);
-      }
-      if (fDrawn) {
-        into.drawImageRect(fDrawn, all, skia::SkSamplingOptions(skia::SkFilterMode::kLinear, skia::SkMipmapMode::kLinear));
-      }
-      // Blurred for real, a little -- a box three times over, near enough a
-      // Gaussian: the picture still seen through the frost, not a wash of
-      // its colours. Once for a size, on a quarter of its pixels.
-      boxBlur(small, fAmount > 0.0f ? 1 : 0, 3);
-      fBlurred = small.asImage();
     }
     // And drawn back up to the device's pixels, once: what frosts puts down
     // a piece of it as it is -- the blurred quarter was scaled up, bilinear,
@@ -207,16 +249,18 @@ public:
     const int fullWidth = std::max(1, static_cast<int>(std::ceil(device.width())));
     const int fullHeight = std::max(1, static_cast<int>(std::ceil(device.height())));
     if (fBlurred && (!fBackdropFull || fBackdropFull->width() != fullWidth || fBackdropFull->height() != fullHeight)) {
-      skia::SkBitmap full;
-      if (full.tryAllocN32Pixels(fullWidth, fullHeight)) {
-        full.eraseColor(0);
-        skia::SkCanvas into(full);
-        into.drawImageRect(fBlurred, skia::SkRect::MakeWH(static_cast<float>(fullWidth), static_cast<float>(fullHeight)),
-                           skia::SkSamplingOptions(skia::SkFilterMode::kLinear));
-        fBackdropFull = full.asImage();
+      fBackdropFull = upTo(fBlurred, fullWidth, fullHeight);
+      fExtra.clear();
+    }
+    // The other blurs asked: each made once, at the device's pixels.
+    if (fExtra.size() != fAmounts.size()) {
+      fExtra.clear();
+      for (const float amount : fAmounts) {
+        fExtra.emplace_back(amount, amount == fAmount && fBackdropFull ? fBackdropFull
+                                                                       : upTo(this->blurredAt(amount, box), fullWidth, fullHeight));
       }
     }
-    skiff::scene::detail::backdrop() = {fBackdropFull ? fBackdropFull : fBlurred, device};
+    skiff::scene::detail::backdrop() = {fBackdropFull ? fBackdropFull : fBlurred, device, fExtra};
   }
 
 private:
@@ -313,6 +357,9 @@ private:
   skia::Sp<skia::SkImage> fBlurred;
   // The backdrop at the device's pixels: what frosted panels draw from.
   skia::Sp<skia::SkImage> fBackdropFull;
+  // The other blurs asked, and each made at the device's pixels.
+  std::vector<float> fAmounts;
+  std::vector<std::pair<float, skia::Sp<skia::SkImage>>> fExtra;
   float fOpacity = 1.0f;
   // The look before a change, fading out; and the fade.
   std::optional<skiff::scene::Gradient> fOldGradient;
