@@ -26,6 +26,10 @@ public:
     fState.apply({.width = size, .height = size, .cornerRadius = size * 0.5f, .gradient = colours, .masking = true});
     parts.initials.apply({.place = skiff::scene::anchor::kCentre});
     parts.picture.apply({.fill = true, .cornerRadius = size * 0.5f});
+    // The avatar's box, whatever the picture: its coming repaints it and lays
+    // nothing out -- every new row of a list laid the list out again as its
+    // avatar came, in the middle of the list sliding in.
+    parts.picture.keepBox();
   }
 
   // Another's: its initials, its picture and its colours.
