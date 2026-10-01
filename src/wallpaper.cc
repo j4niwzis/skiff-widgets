@@ -41,6 +41,7 @@ public:
     if (gradient == fGradient) {
       return;
     }
+    this->keepOld();
     fGradient = gradient;
     fBlurred = nullptr;
     this->markDamaged();
@@ -49,6 +50,7 @@ public:
     if (pattern == fPattern && colour == fColour) {
       return;
     }
+    this->keepOld();
     fPattern = std::move(pattern);
     fColour = colour;
     fDrawn = nullptr;
@@ -83,18 +85,60 @@ public:
     if (picture == fPicture) {
       return;
     }
+    this->keepOld();
     fPicture = std::move(picture);
     fDrawn = nullptr;
     fBlurred = nullptr;
     this->markDamaged();
   }
 
+  // A change of look -- another chat's background -- faded across from the
+  // look before: what that drew kept (its gradient, its picture or pattern
+  // as drawn), drawn going as the new one comes. The first change of a frame
+  // keeps it; the setters after it, the same change, keep nothing more.
+  void keepOld() {
+    if (fKeptThisFrame) {
+      return;
+    }
+    fKeptThisFrame = true;
+    fOldGradient = fGradient && !fPicture ? fGradient : std::nullopt;
+    fOldDrawn = fDrawn;
+    fFade.jump(0.0f);
+    fFade.setTarget(1.0f);
+    skiff::scene::work::mark(fState.fId);
+  }
+  [[nodiscard]] bool wantsTick() const { return fFade.moving(); }
+  [[nodiscard]] bool settling() const { return fFade.moving(); }
+  void update(double nowMs) {
+    if (fFade.step(nowMs)) {
+      this->markDamaged();
+    }
+    if (!fFade.moving()) {
+      fOldGradient.reset();
+      fOldDrawn = nullptr;
+    }
+  }
+
   void drawSelf(skia::SkCanvas *canvas, float alpha) {
+    fKeptThisFrame = false;
     const skia::SkRect &box = fState.fBounds;
     if (box.isEmpty()) {
       return;
     }
     alpha *= fOpacity;
+    // The look going, under the one coming.
+    const float coming = fFade.value();
+    if (coming < 1.0f) {
+      if (fOldGradient) {
+        skiff::paint::verticalGradient(canvas, box, fOldGradient->top, fOldGradient->bottom, alpha * (1.0f - coming));
+      }
+      if (fOldDrawn) {
+        skia::SkPaint old;
+        old.setAlphaf(alpha * (1.0f - coming));
+        canvas->drawImageRect(fOldDrawn, box, skia::SkSamplingOptions(skia::SkFilterMode::kLinear), &old);
+      }
+      alpha *= coming;
+    }
     if (fGradient && !fPicture) {
       skiff::paint::verticalGradient(canvas, box, fGradient->top, fGradient->bottom, alpha);
     }
@@ -246,6 +290,11 @@ private:
   skia::Sp<skia::SkImage> fDrawn;
   skia::Sp<skia::SkImage> fBlurred;
   float fOpacity = 1.0f;
+  // The look before a change, fading out; and the fade.
+  std::optional<skiff::scene::Gradient> fOldGradient;
+  skia::Sp<skia::SkImage> fOldDrawn;
+  skiff::paint::Tween fFade{1.0f, 260.0f};
+  bool fKeptThisFrame = false;
   float fAmount = 0.3f;
   int fDrawnWidth = 0;
   int fDrawnHeight = 0;
