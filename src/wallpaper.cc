@@ -65,14 +65,16 @@ public:
     fOpacity = opacity;
     this->markDamaged();
   }
-  // How much the frost blurs: by this many of its quarter-size pixels, 0 not
-  // at all. Made again once, where it changes.
-  void setBlur(int radius) {
-    radius = std::max(0, radius);
-    if (radius == fRadius) {
+  // How much the frost blurs, from 0 (not at all) to 1 (about five screen
+  // pixels): the copy made smaller the more it blurs -- smoothly, not in
+  // whole pixels of a radius -- and blurred there by one. Made again once,
+  // where it changes.
+  void setBlur(float amount) {
+    amount = std::clamp(amount, 0.0f, 1.0f);
+    if (amount == fAmount) {
       return;
     }
-    fRadius = radius;
+    fAmount = amount;
     fBlurred = nullptr;
     this->markDamaged();
   }
@@ -126,8 +128,9 @@ public:
   // at a frame.
   void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
     if (!fBlurred) {
-      const int width = std::max(1, static_cast<int>(box.width() / kShrink));
-      const int height = std::max(1, static_cast<int>(box.height() / kShrink));
+      const float shrink = 1.0f + fAmount * 4.0f;
+      const int width = std::max(1, static_cast<int>(box.width() / shrink));
+      const int height = std::max(1, static_cast<int>(box.height() / shrink));
       skia::SkBitmap small;
       if (!small.tryAllocN32Pixels(width, height)) {
         return;
@@ -144,7 +147,7 @@ public:
       // Blurred for real, a little -- a box three times over, near enough a
       // Gaussian: the picture still seen through the frost, not a wash of
       // its colours. Once for a size, on a quarter of its pixels.
-      boxBlur(small, fRadius, 3);
+      boxBlur(small, fAmount > 0.0f ? 1 : 0, 3);
       fBlurred = small.asImage();
     }
     skiff::scene::detail::backdrop() = {fBlurred, canvas->getTotalMatrix().mapRect(box)};
@@ -243,7 +246,7 @@ private:
   skia::Sp<skia::SkImage> fDrawn;
   skia::Sp<skia::SkImage> fBlurred;
   float fOpacity = 1.0f;
-  int fRadius = kRadius;
+  float fAmount = 0.3f;
   int fDrawnWidth = 0;
   int fDrawnHeight = 0;
 };
