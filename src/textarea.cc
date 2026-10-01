@@ -99,6 +99,9 @@ public:
   // picker gives the field (an emoji, say).
   void insertText(std::string text) { this->insert(std::move(text)); }
   void setText(std::string text) {
+    fUndo.clear();
+    fRedo.clear();
+    this->breakRun();
     fText = std::move(text);
     fAtoms.clear();
     fCaret = fAnchor = fText.size();
@@ -217,6 +220,7 @@ public:
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &at,
                  skiff::scene::PointerReply &reply) {
+    this->breakRun();  // the caret put elsewhere: what is typed next is a step of its own
     fCaret = this->outOfAtoms(this->offsetAt(at.x, at.y));
     fAnchor = fCaret;
     fDragging = true;
@@ -266,10 +270,32 @@ public:
         fAnchor = fCaret;
       }
     };
+    // Back a step, and forward again: Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y.
+    if (control && press.key == keys::kZ) {
+      if (shift) {
+        this->redo();
+      } else {
+        this->undo();
+      }
+      reply.handle();
+      return;
+    }
+    if (control && press.key == keys::kY) {
+      this->redo();
+      reply.handle();
+      return;
+    }
+    // The caret moved: what is typed after it is a step of its own.
+    if (press.key == keys::kLeft || press.key == keys::kRight || press.key == keys::kUp || press.key == keys::kDown ||
+        press.key == keys::kHome || press.key == keys::kEnd) {
+      this->breakRun();
+    }
     // The program's blocks first: a key that means something in one of
     // them -- Enter in a quote -- is theirs.
     if (!fMasked && !fSingle && !this->hasSelection()) {
       if (std::optional<TextEdit> edit = Blocks::key(fText, fCaret, press)) {
+        this->remember(false);
+        this->breakRun();
         this->eraseText(edit->from, edit->to);
         fText.insert(edit->from, edit->with);
         this->shiftAtoms(edit->from, static_cast<std::ptrdiff_t>(edit->with.size()));
@@ -592,10 +618,68 @@ private:
     return caret > room ? caret - room : 0.0f;
   }
 
+  // What Ctrl+Z goes back to, as Qt's text edit keeps it -- tdesktop's field:
+  // the text as it was before each step of editing, with its atoms and its
+  // caret; and what Ctrl+Shift+Z or Ctrl+Y goes forward to again. Typing
+  // that runs on from where the last typing ended is one step, as is
+  // erasing that runs back from where the last erasing began; anything else
+  // -- a paste, a cut, a selection replaced, the caret moved -- is a step of
+  // its own. Text set by the program is a new start.
+  struct Snapshot {
+    std::string text;
+    std::vector<Atom> atoms;
+    std::size_t caret = 0, anchor = 0;
+  };
+  std::vector<Snapshot> fUndo, fRedo;
+  std::optional<std::size_t> fTypingAt, fErasingAt;
+  static constexpr std::size_t kMostSteps = 200;
+  void remember(bool runsOn) {
+    if (!runsOn) {
+      fUndo.push_back({fText, fAtoms, fCaret, fAnchor});
+      if (fUndo.size() > kMostSteps) {
+        fUndo.erase(fUndo.begin());
+      }
+    }
+    fRedo.clear();
+  }
+  void breakRun() {
+    fTypingAt.reset();
+    fErasingAt.reset();
+  }
+  void restore(Snapshot to) {
+    fText = std::move(to.text);
+    fAtoms = std::move(to.atoms);
+    fCaret = std::min(to.caret, fText.size());
+    fAnchor = std::min(to.anchor, fText.size());
+    this->breakRun();
+    this->edited();
+  }
+  void undo() {
+    if (fUndo.empty()) {
+      return;
+    }
+    fRedo.push_back({fText, fAtoms, fCaret, fAnchor});
+    Snapshot back = std::move(fUndo.back());
+    fUndo.pop_back();
+    this->restore(std::move(back));
+  }
+  void redo() {
+    if (fRedo.empty()) {
+      return;
+    }
+    fUndo.push_back({fText, fAtoms, fCaret, fAnchor});
+    Snapshot forward = std::move(fRedo.back());
+    fRedo.pop_back();
+    this->restore(std::move(forward));
+  }
+
   void insert(std::string typed) {
     if (fSingle) {
       std::erase(typed, '\n');
     }
+    // A character typed where the last one went: the same step.
+    const bool one = !typed.empty() && typed.size() <= 4 && typed != "\n" && !this->hasSelection();
+    this->remember(one && fTypingAt == fCaret);
     if (this->hasSelection()) {
       this->erase(this->low(), this->high());
     }
@@ -605,11 +689,17 @@ private:
     this->shiftAtoms(fCaret, static_cast<std::ptrdiff_t>(typed.size()));
     fCaret += typed.size();
     fAnchor = fCaret;
+    fTypingAt = one ? std::optional<std::size_t>(fCaret) : std::nullopt;
+    fErasingAt.reset();
     this->edited();
   }
   void erase(std::size_t from, std::size_t to) {
+    // A character erased back from where the last erasing began: the same step.
+    this->remember(!this->hasSelection() && fErasingAt == to && to - from <= 4);
     this->eraseText(from, to);
     fCaret = fAnchor = from;
+    fErasingAt = from;
+    fTypingAt.reset();
     this->edited();
   }
   void edited() {
