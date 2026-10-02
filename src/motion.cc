@@ -367,6 +367,28 @@ public:
       reply.handle();
     }
   }
+  // A swipe across the panel, right to left -- a finger's -- pushes it
+  // back: where it began, and as it is let go.
+  void onPointer(skiff::scene::phase::capture, const skiff::scene::pointer::down &press,
+                 skiff::scene::PointerReply &) {
+    fSwipeFrom.reset();
+    if (fOpen && press.button <= 1 && fSheet.bounds().contains(press.x, press.y)) {
+      fSwipeFrom = skia::SkPoint{press.x, press.y};
+    }
+  }
+  void onPointer(skiff::scene::phase::capture, const skiff::scene::pointer::up &lift,
+                 skiff::scene::PointerReply &reply) {
+    const std::optional<skia::SkPoint> from = std::exchange(fSwipeFrom, std::nullopt);
+    if (!from || !fOpen) {
+      return;
+    }
+    const float dx = from->fX - lift.x;
+    const float dy = lift.y - from->fY;
+    if (dx > 90.0f && std::abs(dy) < dx * 0.5f) {
+      this->close();
+      reply.handle();
+    }
+  }
   using Node::onKey;
   void onKey(skiff::scene::phase::bubble, const skiff::scene::key::down &press,
              skiff::scene::Reply &reply) {
@@ -377,6 +399,7 @@ public:
   }
 
 private:
+  std::optional<skia::SkPoint> fSwipeFrom;
   // What covers the base: it takes the pointer, so a press off the panel
   // closes it rather than reaching what is under it.
   class Scrim : public skiff::nodes::Box<> {
