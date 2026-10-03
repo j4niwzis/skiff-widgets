@@ -32,6 +32,8 @@ struct Theme {
   float fFontSize = 16.0f;
   float fRowHeight = 40.0f;
   float fPaddingX = 12.0f;
+
+  friend bool operator==(const Theme &, const Theme &) = default;
 };
 
 
