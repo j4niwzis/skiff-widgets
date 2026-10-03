@@ -10,6 +10,7 @@
 export module skiff.widgets.erased;
 
 import std;
+import splice;
 import skiff.scene;
 
 export namespace skiff::widgets {
@@ -17,25 +18,25 @@ export namespace skiff::widgets {
 // Whether widgets hold their actions erased: as the walks are.
 inline constexpr bool kErasedActions = skiff::scene::kErasedWalks;
 
-// A call, whatever it is: made as it would be. Erasure, outside a release
+// A call, whatever it is: made as it would be -- splice::erased_call, held
+// in a buffer of its own, never on the heap. Erasure, outside a release
 // build only. NoAction is held as nothing, so that it still does not act.
+// How large an action may be: a few pointers and a string -- what a
+// screen's actions carry. A larger one is an error where it is erased.
+inline constexpr std::size_t kActionBytes = 8 * sizeof(void *);
 template <class Signature>
 class AnyCall;
 template <class Result, class... Args>
-class AnyCall<Result(Args...)> {
+class AnyCall<Result(Args...)> : public splice::erased_call<Result(Args...), kActionBytes> {
+  using Base = splice::erased_call<Result(Args...), kActionBytes>;
+
 public:
   AnyCall() = default;
   explicit AnyCall(skiff::scene::NoAction) {}
   template <class Call>
     requires(!std::same_as<std::remove_cvref_t<Call>, AnyCall> &&
              !std::same_as<std::remove_cvref_t<Call>, skiff::scene::NoAction> && std::invocable<const Call &, Args...>)
-  explicit AnyCall(Call call) : fCall(std::move(call)) {}
-  // What it answers; holding nothing, a Result made empty.
-  Result operator()(Args... args) const { return fCall ? fCall(std::forward<Args>(args)...) : Result(); }
-  [[nodiscard]] bool holds() const noexcept { return static_cast<bool>(fCall); }
-
-private:
-  std::function<Result(Args...)> fCall;
+  explicit AnyCall(Call call) : Base(std::move(call)) {}
 };
 // An action: a call of nothing.
 using AnyAction = AnyCall<void()>;
