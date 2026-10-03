@@ -6,6 +6,7 @@ import skiff.paint;
 import skiff.scene;
 import skiff.nodes;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 
 export namespace skiff::widgets {
 
@@ -15,6 +16,7 @@ export namespace skiff::widgets {
 // stop it. A node of the toolkit's to draw: the program says only how far.
 // Pressed, it does `onPress` -- the program stops what is loading, or, where
 // it was stopped (an arrow down in the disc then), starts it again.
+namespace internal {
 template <class OnPress = skiff::scene::NoAction> class RadialLoader : public skiff::scene::Node {
 public:
   explicit RadialLoader(float size = 44.0f, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
@@ -85,5 +87,19 @@ private:
   bool fStopped = false;
   [[no_unique_address]] OnPress fOnPress;
 };
+} // namespace internal
+
+// The loader over AnyAction, taking the action given and erasing it.
+template <class OnPress>
+class ErasedRadialLoader : public internal::RadialLoader<AnyAction> {
+public:
+  explicit ErasedRadialLoader(float size = 44.0f, OnPress onPress = {})
+      : internal::RadialLoader<AnyAction>(size, AnyAction(std::move(onPress))) {}
+};
+// The loader: made for its action in a release build, over AnyAction
+// otherwise.
+template <class OnPress = skiff::scene::NoAction>
+using RadialLoader = std::conditional_t<kErasedActions, ErasedRadialLoader<OnPress>, internal::RadialLoader<OnPress>>;
+
 
 } // namespace skiff::widgets

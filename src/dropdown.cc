@@ -6,6 +6,7 @@ import skiff.paint;
 import skiff.scene;
 import skiff.nodes;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 
 namespace skiff::widgets {
 using skiff::scene::Margin;
@@ -16,6 +17,7 @@ export namespace skiff::widgets {
 
 // The closed half of a dropdown. The label, current value and open state are
 // data; hover, hit testing and the chevron belong to the widget.
+namespace internal {
 template <class OnOpen = skiff::scene::NoAction>
 class DropdownButton : public skiff::scene::Node {
 public:
@@ -145,9 +147,22 @@ private:
   std::string fValue;
   bool fOpen = false;
 };
-DropdownButton() -> DropdownButton<>;
-DropdownButton(std::string) -> DropdownButton<>;
-DropdownButton(std::string, std::string) -> DropdownButton<>;
+} // namespace internal
+
+// The dropdown button over AnyAction, taking the action given and erasing it.
+template <class OnOpen>
+class ErasedDropdownButton : public internal::DropdownButton<AnyAction> {
+public:
+  explicit ErasedDropdownButton(std::string label = {}, std::string value = {}, OnOpen onOpen = {})
+      : internal::DropdownButton<AnyAction>(std::move(label), std::move(value), AnyAction(std::move(onOpen))) {}
+  ErasedDropdownButton(Theme theme, std::string label = {}, std::string value = {}, OnOpen onOpen = {})
+      : internal::DropdownButton<AnyAction>(std::move(theme), std::move(label), std::move(value), AnyAction(std::move(onOpen))) {}
+};
+// The dropdown button: made for its action in a release build, over
+// AnyAction otherwise.
+template <class OnOpen = skiff::scene::NoAction>
+using DropdownButton = std::conditional_t<kErasedActions, ErasedDropdownButton<OnOpen>, internal::DropdownButton<OnOpen>>;
+
 
 // How a dropdown list's rows look: the list's, copied to each row so a row
 // draws itself without reaching back to the list.
@@ -245,6 +260,7 @@ private:
 // The open half of a dropdown: a plate with a row per option, the current one
 // held at full strength and the one under the pointer lit. The height comes
 // from the rows; each row notices the pointer and is hit on its own.
+namespace internal {
 template <class OnChoose = skiff::scene::NoAction>
 class DropdownList : public skiff::scene::Node {
 public:
@@ -416,6 +432,20 @@ private:
   DropdownLook fLook;
   int fCurrent = -1;
 };
-DropdownList() -> DropdownList<>;
+} // namespace internal
+
+// A row chosen: by its index.
+using AnyChoice = AnyCall<void(int)>;
+// The dropdown list over AnyChoice, taking the action given and erasing it.
+template <class OnChoose>
+class ErasedDropdownList : public internal::DropdownList<AnyChoice> {
+public:
+  explicit ErasedDropdownList(OnChoose onChoose = {}) : internal::DropdownList<AnyChoice>(AnyChoice(std::move(onChoose))) {}
+};
+// The dropdown list: made for its action in a release build, over
+// AnyChoice otherwise.
+template <class OnChoose = skiff::scene::NoAction>
+using DropdownList = std::conditional_t<kErasedActions, ErasedDropdownList<OnChoose>, internal::DropdownList<OnChoose>>;
+
 
 } // namespace skiff::widgets

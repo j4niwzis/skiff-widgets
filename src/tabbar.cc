@@ -5,6 +5,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 
 namespace skiff::widgets {
 using skiff::scene::Margin;
@@ -19,6 +20,7 @@ export namespace skiff::widgets {
 // how to say that one of them was clicked. What a tab means is the caller's
 // business, and so is anything drawn beside the selected one, which is what
 // drawDecoration is for.
+namespace internal {
 template <class OnSelect = skiff::scene::NoAction,
           class IsActive = skiff::scene::NoAction,
           class Decorate = skiff::scene::NoAction>
@@ -265,6 +267,9 @@ public:
   [[nodiscard]] bool answer(const skiff::scene::NoAction &, int value) const {
     return value == fSelected;
   }
+  [[nodiscard]] bool answer(const AnyCall<bool(int)> &given, int value) const {
+    return given.holds() ? given(value) : value == fSelected;
+  }
   template <class Answer>
   [[nodiscard]] bool answer(const Answer &given, int value) const {
     return std::invoke(given, value);
@@ -288,7 +293,32 @@ private:
   int fSelected = -1;
   int fHotTab = -1;
 };
+} // namespace internal
 
-TabBar() -> TabBar<>;
+// A tab chosen, by its value; whether a tab reads as selected; and what is
+// drawn after the selected one, in its box.
+using AnyTabChoice = AnyCall<void(int)>;
+using AnyTabAnswer = AnyCall<bool(int)>;
+using AnyTabDecoration = AnyCall<void(skia::SkCanvas *, const skia::SkRect &, float)>;
+// The tab bar over those, taking what it is given and erasing it.
+template <class OnSelect, class IsActive, class Decorate>
+class ErasedTabBar : public internal::TabBar<AnyTabChoice, AnyTabAnswer, AnyTabDecoration> {
+  using Base = internal::TabBar<AnyTabChoice, AnyTabAnswer, AnyTabDecoration>;
+
+public:
+  ErasedTabBar(Theme theme, OnSelect onSelect, IsActive isActive = {}, Decorate decorate = {})
+      : Base(std::move(theme), AnyTabChoice(std::move(onSelect)), AnyTabAnswer(std::move(isActive)),
+             AnyTabDecoration(std::move(decorate))) {}
+  explicit ErasedTabBar(OnSelect onSelect = {}, IsActive isActive = {}, Decorate decorate = {})
+      : Base(AnyTabChoice(std::move(onSelect)), AnyTabAnswer(std::move(isActive)), AnyTabDecoration(std::move(decorate))) {}
+};
+// The tab bar: made for what it is given in a release build, over those
+// otherwise.
+template <class OnSelect = skiff::scene::NoAction, class IsActive = skiff::scene::NoAction,
+          class Decorate = skiff::scene::NoAction>
+using TabBar = std::conditional_t<kErasedActions, ErasedTabBar<OnSelect, IsActive, Decorate>,
+                                  internal::TabBar<OnSelect, IsActive, Decorate>>;
+
+
 
 } // namespace skiff::widgets

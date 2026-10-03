@@ -5,6 +5,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 import skiff.widgets.dropdown;
 
 export namespace skiff::widgets {
@@ -116,6 +117,7 @@ private:
 // after it among its parent's children; what is under the strip starts at
 // barHeight(). With no menu open, nothing but the titles takes the pointer.
 // The first menu's title is bold: the application's own menu.
+namespace internal {
 template <class OnChoose = skiff::scene::NoAction>
 class MenuBar : public skiff::scene::Node {
 public:
@@ -346,6 +348,20 @@ private:
   int fOpen = -1;
   skia::SkRect fPopup = skia::SkRect::MakeEmpty();
 };
-MenuBar() -> MenuBar<>;
+} // namespace internal
+
+// A menu's row chosen: the menu, and the row in it.
+using AnyMenuChoice = AnyCall<void(int, int)>;
+// The menu bar over AnyMenuChoice, taking the action given and erasing it.
+template <class OnChoose>
+class ErasedMenuBar : public internal::MenuBar<AnyMenuChoice> {
+public:
+  explicit ErasedMenuBar(OnChoose onChoose = {}) : internal::MenuBar<AnyMenuChoice>(AnyMenuChoice(std::move(onChoose))) {}
+};
+// The menu bar: made for its action in a release build, over AnyMenuChoice
+// otherwise.
+template <class OnChoose = skiff::scene::NoAction>
+using MenuBar = std::conditional_t<kErasedActions, ErasedMenuBar<OnChoose>, internal::MenuBar<OnChoose>>;
+
 
 } // namespace skiff::widgets

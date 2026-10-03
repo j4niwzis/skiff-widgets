@@ -6,6 +6,7 @@ import skiff.paint;
 import skiff.scene;
 import skiff.nodes.text;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 // With skiff's shaping, the caret steps over whole characters (UAX #29): an
 // emoji sequence or a letter with its marks is one step and one Backspace.
 #ifdef SKIFF_TEXT_SHAPING
@@ -90,6 +91,45 @@ struct NoBlocks {
   // What is typed, as it is put in: as it is.
   [[nodiscard]] static std::optional<TextEdit> typed(std::string_view, std::size_t, std::string_view) { return std::nullopt; }
 };
+// What is typed, as blocks put it in: theirs where they say, as it is
+// where they have nothing to say.
+template <class Blocks>
+  requires requires(const Blocks &blocks, std::string_view text, std::size_t caret) { blocks.typed(text, caret, text); }
+[[nodiscard]] std::optional<TextEdit> typedBy(const Blocks &blocks, std::string_view text, std::size_t caret,
+                                              std::string_view typed) {
+  return blocks.typed(text, caret, typed);
+}
+template <class Blocks>
+[[nodiscard]] std::optional<TextEdit> typedBy(const Blocks &, std::string_view, std::size_t, std::string_view) {
+  return std::nullopt;
+}
+// A field's blocks, whatever they are: asked as they would be, through their
+// four functions. Erasure, outside a release build only.
+struct AnyBlocks {
+  BlockLook (*fLook)(std::string_view, std::size_t) = &NoBlocks::look;
+  void (*fDrawBehind)(skia::SkCanvas *, const skiff::paint::Painter &, std::string_view, std::span<const ShownLine>,
+                      const skia::SkRect &, const Theme &, float, float) = &NoBlocks::drawBehind;
+  std::optional<TextEdit> (*fKey)(std::string_view, std::size_t, const skiff::scene::key::down &) = &NoBlocks::key;
+  std::optional<TextEdit> (*fTyped)(std::string_view, std::size_t, std::string_view) = &NoBlocks::typed;
+  template <class Blocks> [[nodiscard]] static AnyBlocks of() {
+    return {&Blocks::look, &Blocks::drawBehind, &Blocks::key,
+            [](std::string_view text, std::size_t caret, std::string_view typed) { return typedBy(Blocks{}, text, caret, typed); }};
+  }
+  [[nodiscard]] BlockLook look(std::string_view text, std::size_t start) const { return fLook(text, start); }
+  void drawBehind(skia::SkCanvas *canvas, const skiff::paint::Painter &p, std::string_view text,
+                  std::span<const ShownLine> lines, const skia::SkRect &box, const Theme &theme, float size,
+                  float alpha) const {
+    fDrawBehind(canvas, p, text, lines, box, theme, size, alpha);
+  }
+  [[nodiscard]] std::optional<TextEdit> key(std::string_view text, std::size_t caret,
+                                            const skiff::scene::key::down &press) const {
+    return fKey(text, caret, press);
+  }
+  [[nodiscard]] std::optional<TextEdit> typed(std::string_view text, std::size_t caret, std::string_view what) const {
+    return fTyped(text, caret, what);
+  }
+};
+namespace internal {
 template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures, class Blocks = NoBlocks>
 class TextArea : public skiff::scene::Node {
 public:
@@ -107,6 +147,9 @@ public:
   }
 
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
+  // Its pictures and blocks: what an erased field is told of its own.
+  void setPictures(Pictures pictures) { fPictures = std::move(pictures); }
+  void setBlocks(Blocks blocks) { fBlocks = std::move(blocks); }
   // Text put in at the caret, over what is selected, as if typed: what a
   // picker gives the field (an emoji, say).
   void insertText(std::string text) { this->insert(std::move(text)); }
@@ -265,13 +308,11 @@ public:
               skiff::scene::Reply &reply) {
     // The program's blocks first, as for a key: what is typed may become
     // something else where it goes -- "--" a dash.
-    if constexpr (requires { Blocks::typed(std::string_view(fText), fCaret, typed.text); }) {
-      if (!typed.text.empty() && !fMasked && !fSingle && !this->hasSelection()) {
-        if (std::optional<TextEdit> edit = Blocks::typed(fText, fCaret, typed.text)) {
-          this->applyEdit(*edit);
-          reply.handle();
-          return;
-        }
+    if (!typed.text.empty() && !fMasked && !fSingle && !this->hasSelection()) {
+      if (std::optional<TextEdit> edit = typedBy(fBlocks, fText, fCaret, typed.text)) {
+        this->applyEdit(*edit);
+        reply.handle();
+        return;
       }
     }
     if (!typed.text.empty()) {
@@ -326,7 +367,7 @@ public:
     // The program's blocks first: a key that means something in one of
     // them -- Enter in a quote -- is theirs.
     if (!fMasked && !fSingle && !this->hasSelection()) {
-      if (std::optional<TextEdit> edit = Blocks::key(fText, fCaret, press)) {
+      if (std::optional<TextEdit> edit = fBlocks.key(fText, fCaret, press)) {
         this->applyEdit(*edit);
         reply.handle();
         return;
@@ -454,7 +495,7 @@ public:
         const float top = box.fTop + kPadY + static_cast<float>(i - first) * lineHeight;
         shownLines.push_back({this->lineStartOf(fLines[static_cast<std::size_t>(i)].fStart), top, top + lineHeight});
       }
-      Blocks::drawBehind(canvas, p, fText, shownLines, box, fTheme, fFontSize, alpha);
+      fBlocks.drawBehind(canvas, p, fText, shownLines, box, fTheme, fFontSize, alpha);
     }
     for (int i = first; i < static_cast<int>(fLines.size()); ++i) {
       const Line &line = fLines[static_cast<std::size_t>(i)];
@@ -499,7 +540,7 @@ private:
 
   // How the paragraph an offset is in looks, as the program's blocks say.
   [[nodiscard]] BlockLook lookAt(std::size_t at) const {
-    return fMasked || fSingle ? BlockLook{} : Blocks::look(fText, this->lineStartOf(at));
+    return fMasked || fSingle ? BlockLook{} : fBlocks.look(fText, this->lineStartOf(at));
   }
   // How far a line's text stands in: its paragraph's indent.
   [[nodiscard]] float indentOf(const Line &line) const { return this->lookAt(line.fStart).indent; }
@@ -535,7 +576,7 @@ private:
         at = to;
         if (one.picture) {
           // Its picture, square, as a message's text draws one.
-          if (const skia::Sp<skia::SkImage> *image = Pictures::picture(one.target); image && *image) {
+          if (const skia::Sp<skia::SkImage> *image = fPictures.picture(one.target); image && *image) {
             const float side = fFontSize * 1.2f;
             skia::SkPaint paint;
             paint.setAlphaf(alpha);
@@ -545,7 +586,7 @@ private:
           continue;
         }
         skiff::nodes::drawPill(canvas, p, x, y, width, fFontSize, fTheme.fAccent,
-                               from == one.first ? Pictures::pill(one.target) : std::nullopt, alpha);
+                               from == one.first ? fPictures.pill(one.target) : std::nullopt, alpha);
         p.text(this->shown(from, to), x, y, fFontSize, fTheme.fAccent, alpha);
       }
     }
@@ -951,6 +992,8 @@ private:
   std::vector<Atom> fAtoms;
   std::string fPlaceholder;
   [[no_unique_address]] OnSubmit fOnSubmit;
+  [[no_unique_address]] Pictures fPictures{};
+  [[no_unique_address]] Blocks fBlocks{};
   Theme fTheme;
   float fFontSize = 15.0f;
   int fMaxLines = 8;
@@ -970,5 +1013,37 @@ private:
   double fCaretSinceMs = 0.0;
   double fNowMs = 0.0;
 };
+} // namespace internal
+
+// What is sent: the text, as it reads plain.
+using AnySubmit = AnyCall<void(std::string_view)>;
+// The field over AnySubmit, AnyPictures and AnyBlocks, taking its own and
+// erasing them: all of its code but this is that field's, made once.
+template <class OnSubmit, class Pictures, class Blocks>
+class ErasedTextArea : public internal::TextArea<AnySubmit, skiff::nodes::AnyPictures, AnyBlocks> {
+  using Base = internal::TextArea<AnySubmit, skiff::nodes::AnyPictures, AnyBlocks>;
+
+public:
+  explicit ErasedTextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
+      : Base(std::move(placeholder), AnySubmit(std::move(onSubmit))) {
+    this->erase();
+  }
+  ErasedTextArea(Theme theme, std::string placeholder, OnSubmit onSubmit = {})
+      : Base(std::move(theme), std::move(placeholder), AnySubmit(std::move(onSubmit))) {
+    this->erase();
+  }
+
+private:
+  void erase() {
+    this->setPictures(skiff::nodes::AnyPictures::of<Pictures>());
+    this->setBlocks(AnyBlocks::of<Blocks>());
+  }
+};
+// The field: made for its own in a release build, over the erased ones
+// otherwise.
+template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures, class Blocks = NoBlocks>
+using TextArea = std::conditional_t<kErasedActions, ErasedTextArea<OnSubmit, Pictures, Blocks>,
+                                    internal::TextArea<OnSubmit, Pictures, Blocks>>;
+
 
 } // namespace skiff::widgets

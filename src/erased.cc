@@ -21,8 +21,8 @@ inline constexpr bool kErasedActions = skiff::scene::kErasedWalks;
 // build only. NoAction is held as nothing, so that it still does not act.
 template <class Signature>
 class AnyCall;
-template <class... Args>
-class AnyCall<void(Args...)> {
+template <class Result, class... Args>
+class AnyCall<Result(Args...)> {
 public:
   AnyCall() = default;
   explicit AnyCall(skiff::scene::NoAction) {}
@@ -30,15 +30,12 @@ public:
     requires(!std::same_as<std::remove_cvref_t<Call>, AnyCall> &&
              !std::same_as<std::remove_cvref_t<Call>, skiff::scene::NoAction> && std::invocable<const Call &, Args...>)
   explicit AnyCall(Call call) : fCall(std::move(call)) {}
-  void operator()(Args... args) const {
-    if (fCall) {
-      fCall(std::forward<Args>(args)...);
-    }
-  }
+  // What it answers; holding nothing, a Result made empty.
+  Result operator()(Args... args) const { return fCall ? fCall(std::forward<Args>(args)...) : Result(); }
   [[nodiscard]] bool holds() const noexcept { return static_cast<bool>(fCall); }
 
 private:
-  std::function<void(Args...)> fCall;
+  std::function<Result(Args...)> fCall;
 };
 // An action: a call of nothing.
 using AnyAction = AnyCall<void()>;
