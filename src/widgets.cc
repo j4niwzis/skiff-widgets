@@ -7,8 +7,8 @@ export module skiff.widgets;
 //
 // A widget draws itself from a Theme rather than from constants baked into
 // it, so a screen restyles by handing over a different Theme and not by
-// subclassing. The default Theme is a dark neutral one; the client overwrites
-// theme() at startup with its own.
+// subclassing. The default Theme is a dark neutral one; a client hands its
+// own to each widget it makes, as it makes it.
 
 export import skiff.widgets.theme;
 export import skiff.widgets.textbox;

@@ -26,6 +26,10 @@ export namespace skiff::widgets {
 template <class OnSet = skiff::scene::NoAction, class OnDone = skiff::scene::NoAction>
 class SliderBar : public skiff::scene::Node {
 public:
+  // Made in a theme: the one it is given, not one of the library's.
+  SliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {}) : SliderBar(std::move(onSet), std::move(onDone)) {
+    fTheme = std::move(theme);
+  }
   explicit SliderBar(OnSet onSet = {}, OnDone onDone = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
@@ -60,7 +64,7 @@ public:
   }
 
 public:
-  Theme fTheme = theme();
+  Theme fTheme;
   float fKnobRadius = 7.0f;
   float fTrackRadius = 3.0f;
 
@@ -202,6 +206,8 @@ SliderBar() -> SliderBar<>;
 template <class OnSet = skiff::scene::NoAction>
 class RangeSlider : public skiff::scene::Node {
 public:
+  // Made in a theme: the one it is given, not one of the library's.
+  RangeSlider(Theme theme, OnSet onSet) : RangeSlider(std::move(onSet)) { fTheme = std::move(theme); }
   explicit RangeSlider(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
@@ -269,7 +275,7 @@ public:
   void endDrag() noexcept { fDragging = -1; }
 
 public:
-  Theme fTheme = theme();
+  Theme fTheme;
   float fKnobRadius = 7.0f;
   float fTrackHeight = 6.0f;
   float fTrackRadius = 3.0f;
@@ -385,6 +391,8 @@ RangeSlider() -> RangeSlider<>;
 template <class OnToggle = skiff::scene::NoAction>
 class Toggle : public skiff::scene::Node {
 public:
+  // Made in a theme: the one it is given, not one of the library's.
+  Toggle(Theme theme, OnToggle onToggle) : Toggle(std::move(onToggle)) { fTheme = std::move(theme); }
   explicit Toggle(OnToggle onToggle = {}) : fOnToggle(std::move(onToggle)) {
     fState.fWidth = 40.0f;
     fState.fHeight = 22.0f;
@@ -412,7 +420,7 @@ public:
   [[nodiscard]] bool on() const noexcept { return fOn; }
 
 public:
-  Theme fTheme = theme();
+  Theme fTheme;
   float fKnobRadius = 8.0f;
   float fKnobInset = 11.0f;
   float fTauMs = 60.0f;

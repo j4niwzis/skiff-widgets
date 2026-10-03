@@ -26,6 +26,12 @@ public:
     fState.fHeight = fTheme.fRowHeight;
     fState.setCursor(skiff::scene::cursor::text{});
   }
+  // Made in a theme: the one it is given, not one of the library's.
+  TextBox(Theme theme, std::string placeholder, OnChanged onChanged = {})
+      : TextBox(std::move(placeholder), std::move(onChanged)) {
+    fTheme = std::move(theme);
+    fState.fHeight = fTheme.fRowHeight;
+  }
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -78,7 +84,7 @@ public:
   }
 
 public:
-  Theme fTheme = theme();
+  Theme fTheme;
   std::string fPlaceholder;
   bool fSearchIcon = false; // the magnifier lazer puts in its search boxes
   bool fMasked = false;

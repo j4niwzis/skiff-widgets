@@ -25,6 +25,11 @@ public:
         fValue(std::move(value)) {
     fState.fHeight = 30.0f;
   }
+  // Made in a theme: the one it is given, not one of the library's.
+  DropdownButton(Theme theme, std::string label = {}, std::string value = {}, OnOpen onOpen = {})
+      : DropdownButton(std::move(label), std::move(value), std::move(onOpen)) {
+    fTheme = std::move(theme);
+  }
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -53,7 +58,7 @@ public:
   }
   [[nodiscard]] bool open() const noexcept { return fOpen; }
 
-  Theme fTheme = theme();
+  Theme fTheme;
   float fLabelWidth = 52.0f;
   float fChevronWidth = 22.0f;
   float fStrokeWidth = 1.0f;
@@ -147,7 +152,7 @@ DropdownButton(std::string, std::string) -> DropdownButton<>;
 // How a dropdown list's rows look: the list's, copied to each row so a row
 // draws itself without reaching back to the list.
 struct DropdownLook {
-  Theme fTheme = theme();
+  Theme fTheme;
   float fRowHeight = 24.0f;
   float fFontSize = 13.0f;
   float fPlateRadius = 6.0f;

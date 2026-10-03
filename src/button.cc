@@ -23,6 +23,12 @@ public:
       : fLabel(std::move(label)), fAction(std::move(action)) {
     fState.fHeight = fTheme.fRowHeight;
   }
+  // Made in a theme: the one it is given, not one of the library's.
+  Button(Theme theme, std::string label, Action action = {})
+      : Button(std::move(label), std::move(action)) {
+    fTheme = std::move(theme);
+    fState.fHeight = fTheme.fRowHeight;
+  }
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -73,7 +79,7 @@ public:
   }
 
 public:
-  Theme fTheme = theme();
+  Theme fTheme;
   [[nodiscard]] bool acceptsInput() const { return fEnabled; }
   [[nodiscard]] bool hoverChangesAppearance() const { return fEnabled; }
   [[nodiscard]] bool focusChangesAppearance() const { return fEnabled; }

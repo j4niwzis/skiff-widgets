@@ -34,10 +34,5 @@ struct Theme {
   float fPaddingX = 12.0f;
 };
 
-// The one every widget starts from. Set it once, before any tree is built.
-inline Theme &theme() {
-  static Theme t;
-  return t;
-}
 
 } // namespace skiff::widgets

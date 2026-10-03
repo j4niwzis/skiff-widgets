@@ -33,6 +33,11 @@ public:
   // the one whose value is selected(), and a bar where several can be on at
   // once answers for itself; and what is drawn after the selected tab, given
   // its box: a sort chevron, a count, an underline.
+  // Made in a theme: the one it is given, not one of the library's.
+  TabBar(Theme theme, OnSelect onSelect, IsActive isActive = {}, Decorate decorate = {})
+      : TabBar(std::move(onSelect), std::move(isActive), std::move(decorate)) {
+    fTheme = std::move(theme);
+  }
   explicit TabBar(OnSelect onSelect = {}, IsActive isActive = {},
                   Decorate decorate = {})
       : fOnSelect(std::move(onSelect)), fIsActive(std::move(isActive)),
@@ -104,7 +109,7 @@ public:
   }
 
 public:
-  Theme fTheme = theme();
+  Theme fTheme;
   std::string fHeader;       // caption in the column to the left, may be empty
   float fHeaderWidth = 0.0f; // where the tabs start, header or no header
   float fFontSize = 13.0f;

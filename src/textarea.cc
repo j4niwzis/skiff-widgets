@@ -99,6 +99,12 @@ public:
     fState.fHeight = this->heightFor(1);
     fState.setCursor(skiff::scene::cursor::text{});
   }
+  // Made in a theme: the one it is given, not one of the library's.
+  TextArea(Theme theme, std::string placeholder, OnSubmit onSubmit = {})
+      : TextArea(std::move(placeholder), std::move(onSubmit)) {
+    fTheme = std::move(theme);
+    fState.fHeight = this->heightFor(1);
+  }
 
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
   // Text put in at the caret, over what is selected, as if typed: what a
@@ -945,7 +951,7 @@ private:
   std::vector<Atom> fAtoms;
   std::string fPlaceholder;
   [[no_unique_address]] OnSubmit fOnSubmit;
-  Theme fTheme = theme();
+  Theme fTheme;
   float fFontSize = 15.0f;
   int fMaxLines = 8;
   bool fSingle = false;
