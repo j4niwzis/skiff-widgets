@@ -229,8 +229,10 @@ void drawFrom(const Source &source, skia::SkCanvas *canvas, float blur, const sk
 // the code made where it was erased. Erasure, outside a release build only.
 class AnyBackdropSource {
 public:
-  template <BackdropSource Source>
-    requires(!std::same_as<std::remove_cvref_t<Source>, AnyBackdropSource>)
+  // Itself first: a copy is checked as one before it is asked whether it is
+  // a source -- the other way round, that asks itself again, without end.
+  template <class Source>
+    requires(!std::same_as<std::remove_cvref_t<Source>, AnyBackdropSource> && BackdropSource<Source>)
   explicit AnyBackdropSource(Source source)
       : fDraw([source = std::move(source)](skia::SkCanvas *canvas, float blur, const skia::SkRRect &shape, float alpha) {
           drawFrom(source, canvas, blur, shape, alpha);
