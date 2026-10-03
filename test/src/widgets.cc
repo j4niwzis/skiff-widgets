@@ -114,8 +114,11 @@ TEST(Dropdown, ButtonAndRowsRouteTheirOwnClicks) {
 
 TEST(Button, PrimaryAndEnabledStateOwnDamageAndInput) {
   int clicks = 0;
+  // Named by its action's type: a widget's public name is an alias, which a
+  // deduction cannot see through.
+  const auto render = [&clicks] { ++clicks; };
   auto made = sceneOf({.width = 100.0f, .height = 30.0f},
-                      widgets::Button("Render", [&clicks] { ++clicks; }));
+                      widgets::Button<decltype(render)>("Render", render));
   auto &s = *made;
   auto &button = s.root().child;
   s.state().apply({.fill = true});
@@ -179,7 +182,7 @@ TEST(Hover, OnlyVisibleHoverChangesCauseDamage) {
 
 TEST(TextBox, TextAndSelectionOwnDamage) {
   auto made = sceneOf({.width = 100.0f, .height = 30.0f},
-                      widgets::TextBox("Size"));
+                      widgets::TextBox<>("Size"));
   auto &s = *made;
   auto &box = s.root().child;
   s.state().apply({.fill = true});
@@ -197,7 +200,7 @@ TEST(TextBox, TextAndSelectionOwnDamage) {
 
 TEST(TextBox, MaskedTextStaysOutOfTheSemantics) {
   auto made = sceneOf({.width = 100.0f, .height = 30.0f},
-                      widgets::TextBox("Password"));
+                      widgets::TextBox<>("Password"));
   auto &s = *made;
   auto &box = s.root().child;
   box.setMasked(true);
@@ -239,8 +242,9 @@ TEST(RangeSlider, RoutedDragKeepsCaptureOutsideItsBounds) {
 
 TEST(Button, TabFocusAndEnterActivate) {
   int clicks = 0;
+  const auto apply = [&clicks] { ++clicks; };
   auto made = sceneOf({.width = 100.0f, .height = 30.0f},
-                      widgets::Button("Apply", [&clicks] { ++clicks; }));
+                      widgets::Button<decltype(apply)>("Apply", apply));
   auto &s = *made;
   s.state().apply({.fill = true});
   s.layoutIfNeeded(skia::SkRect::MakeWH(120.0f, 50.0f));
@@ -256,10 +260,10 @@ TEST(Button, TabFocusAndEnterActivate) {
 
 TEST(TextBox, RoutedUtf8AndCompositionUseFocus) {
   std::string changed;
+  const auto typed = [&changed](std::string_view text) { changed = text; };
   auto made = sceneOf(
       {.width = 100.0f, .height = 30.0f},
-      widgets::TextBox("Search",
-                       [&changed](std::string_view text) { changed = text; }));
+      widgets::TextBox<decltype(typed)>("Search", typed));
   auto &s = *made;
   auto &box = s.root().child;
   s.state().apply({.fill = true});

@@ -5,6 +5,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 
 namespace skiff::widgets {
 using skiff::scene::Margin;
@@ -16,6 +17,7 @@ export namespace skiff::widgets {
 // A single line of editable text: OsuTextBox, AdwEntryRow. It owns the string
 // and reports changes. Text and composition events arrive through the scene's
 // focus router, so screens do not need a parallel keyboard implementation.
+namespace internal {
 template <class OnChanged = skiff::scene::NoAction>
 class TextBox : public skiff::scene::Node {
 public:
@@ -371,9 +373,24 @@ private:
   int fCompositionSelectionLength = 0;
   bool fCaretShown = false;
 };
+} // namespace internal
 
-TextBox() -> TextBox<>;
-TextBox(const char *) -> TextBox<>;
-TextBox(std::string) -> TextBox<>;
+// The box over an erased call, taking one of its own type: all of its code
+// but this is internal::TextBox<AnyCall<void(std::string_view)>>'s, made once.
+template <class OnChanged>
+class ErasedTextBox : public internal::TextBox<AnyCall<void(std::string_view)>> {
+  using Base = internal::TextBox<AnyCall<void(std::string_view)>>;
+
+public:
+  explicit ErasedTextBox(std::string placeholder = {}, OnChanged onChanged = {})
+      : Base(std::move(placeholder), AnyCall<void(std::string_view)>(std::move(onChanged))) {}
+  ErasedTextBox(Theme theme, std::string placeholder, OnChanged onChanged = {})
+      : Base(std::move(theme), std::move(placeholder), AnyCall<void(std::string_view)>(std::move(onChanged))) {}
+};
+// The box: made for its call in a release build, over an erased one
+// otherwise.
+template <class OnChanged = skiff::scene::NoAction>
+using TextBox = std::conditional_t<kErasedActions, ErasedTextBox<OnChanged>, internal::TextBox<OnChanged>>;
+
 
 } // namespace skiff::widgets

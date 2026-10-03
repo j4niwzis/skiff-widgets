@@ -11,6 +11,7 @@ export module skiff.widgets;
 // own to each widget it makes, as it makes it.
 
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 export import skiff.widgets.textbox;
 export import skiff.widgets.textarea;
 export import skiff.widgets.button;

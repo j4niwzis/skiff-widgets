@@ -5,6 +5,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 
 namespace skiff::widgets {
 using skiff::scene::Margin;
@@ -13,6 +14,7 @@ using skiff::scene::Spec;
 
 export namespace skiff::widgets {
 
+namespace internal {
 // A rounded rectangle with a label in it that calls something when clicked,
 // and lightens under the pointer. AdwButton, and the five hand-written ones
 // this replaces.
@@ -137,7 +139,22 @@ private:
   [[no_unique_address]] Action fAction;
 };
 
-Button(const char *) -> Button<>;
-Button(std::string) -> Button<>;
+} // namespace internal
+
+// The button over AnyAction, taking an action of its own type and erasing
+// it: all of its code but this is internal::Button<AnyAction>'s, made once.
+template <class Action>
+class ErasedButton : public internal::Button<AnyAction> {
+public:
+  explicit ErasedButton(std::string label, Action action = {})
+      : internal::Button<AnyAction>(std::move(label), AnyAction(std::move(action))) {}
+  ErasedButton(Theme theme, std::string label, Action action = {})
+      : internal::Button<AnyAction>(std::move(theme), std::move(label), AnyAction(std::move(action))) {}
+};
+
+// The button: made for its action in a release build, over AnyAction
+// otherwise.
+template <class Action = skiff::scene::NoAction>
+using Button = std::conditional_t<kErasedActions, ErasedButton<Action>, internal::Button<Action>>;
 
 } // namespace skiff::widgets

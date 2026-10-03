@@ -5,6 +5,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 export import skiff.widgets.theme;
+export import skiff.widgets.erased;
 
 namespace skiff::widgets {
 using skiff::scene::Margin;
@@ -23,6 +24,7 @@ export namespace skiff::widgets {
 // OnDone, where there is one, is told the value once a drag lets go (or a
 // key sets it): what is costly to apply at each step of a drag waits for
 // it, the bar showing the value dragged to meanwhile.
+namespace internal {
 template <class OnSet = skiff::scene::NoAction, class OnDone = skiff::scene::NoAction>
 class SliderBar : public skiff::scene::Node {
 public:
@@ -197,7 +199,23 @@ private:
   float fFraction = 0.0f;
   bool fDragging = false;
 };
-SliderBar() -> SliderBar<>;
+} // namespace internal
+
+// The bar over erased calls, taking calls of their own types: all of its
+// code but this is internal::SliderBar<AnyCall...>'s, made once.
+template <class OnSet, class OnDone>
+class ErasedSliderBar : public internal::SliderBar<AnyCall<void(float)>, AnyCall<void(float)>> {
+  using Base = internal::SliderBar<AnyCall<void(float)>, AnyCall<void(float)>>;
+
+public:
+  explicit ErasedSliderBar(OnSet onSet = {}, OnDone onDone = {})
+      : Base(AnyCall<void(float)>(std::move(onSet)), AnyCall<void(float)>(std::move(onDone))) {}
+  ErasedSliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {})
+      : Base(std::move(theme), AnyCall<void(float)>(std::move(onSet)), AnyCall<void(float)>(std::move(onDone))) {}
+};
+// The bar: made for its calls in a release build, over erased ones otherwise.
+template <class OnSet = skiff::scene::NoAction, class OnDone = skiff::scene::NoAction>
+using SliderBar = std::conditional_t<kErasedActions, ErasedSliderBar<OnSet, OnDone>, internal::SliderBar<OnSet, OnDone>>;
 
 // A track with two independently draggable ends. Values stay normalised so
 // the widget can represent difficulty, price, time or any other range without
@@ -388,6 +406,7 @@ RangeSlider() -> RangeSlider<>;
 
 // A pill that slides its knob from one end to the other. The state is set
 // from outside; what is animated here is only the knob catching up with it.
+namespace internal {
 template <class OnToggle = skiff::scene::NoAction>
 class Toggle : public skiff::scene::Node {
 public:
@@ -499,6 +518,19 @@ private:
   float fKnob = 0.0f;
   double fLastMs = 0.0;
 };
-Toggle() -> Toggle<>;
+} // namespace internal
+
+// The switch over an erased action, taking one of its own type: all of
+// its code but this is internal::Toggle<AnyAction>'s, made once.
+template <class OnToggle>
+class ErasedToggle : public internal::Toggle<AnyAction> {
+public:
+  explicit ErasedToggle(OnToggle onToggle = {}) : internal::Toggle<AnyAction>(AnyAction(std::move(onToggle))) {}
+  ErasedToggle(Theme theme, OnToggle onToggle) : internal::Toggle<AnyAction>(std::move(theme), AnyAction(std::move(onToggle))) {}
+};
+// The switch: made for its action in a release build, over an erased one
+// otherwise.
+template <class OnToggle = skiff::scene::NoAction>
+using Toggle = std::conditional_t<kErasedActions, ErasedToggle<OnToggle>, internal::Toggle<OnToggle>>;
 
 } // namespace skiff::widgets
