@@ -378,14 +378,14 @@ private:
 // The box over an erased call, taking one of its own type: all of its code
 // but this is internal::TextBox<AnyCall<void(std::string_view)>>'s, made once.
 template <class OnChanged>
-class ErasedTextBox : public internal::TextBox<AnyCall<void(std::string_view)>> {
-  using Base = internal::TextBox<AnyCall<void(std::string_view)>>;
+class ErasedTextBox : public internal::TextBox<AnyCallFor<void(std::string_view), OnChanged>> {
+  using Base = internal::TextBox<AnyCallFor<void(std::string_view), OnChanged>>;
 
 public:
   explicit ErasedTextBox(std::string placeholder = {}, OnChanged onChanged = {})
-      : Base(std::move(placeholder), AnyCall<void(std::string_view)>(std::move(onChanged))) {}
+      : Base(std::move(placeholder), AnyCallFor<void(std::string_view), OnChanged>(std::move(onChanged))) {}
   ErasedTextBox(Theme theme, std::string placeholder, OnChanged onChanged = {})
-      : Base(std::move(theme), std::move(placeholder), AnyCall<void(std::string_view)>(std::move(onChanged))) {}
+      : Base(std::move(theme), std::move(placeholder), AnyCallFor<void(std::string_view), OnChanged>(std::move(onChanged))) {}
 };
 // The box: made for its call in a release build, over an erased one
 // otherwise.

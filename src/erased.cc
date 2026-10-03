@@ -21,14 +21,15 @@ inline constexpr bool kErasedActions = skiff::scene::kErasedWalks;
 // A call, whatever it is: made as it would be -- splice::erased_call, held
 // in a buffer of its own, never on the heap. Erasure, outside a release
 // build only. NoAction is held as nothing, so that it still does not act.
-// How large an action may be: a few pointers and a string -- what a
-// screen's actions carry. A larger one is an error where it is erased.
+// The least an erased call holds: a few pointers and a string -- what a
+// screen's actions mostly carry. A larger one is held in a larger AnyCall
+// (kBytesOf).
 inline constexpr std::size_t kActionBytes = 8 * sizeof(void *);
-template <class Signature>
+template <class Signature, std::size_t Bytes = kActionBytes>
 class AnyCall;
-template <class Result, class... Args>
-class AnyCall<Result(Args...)> : public splice::erased_call<Result(Args...), kActionBytes> {
-  using Base = splice::erased_call<Result(Args...), kActionBytes>;
+template <class Result, class... Args, std::size_t Bytes>
+class AnyCall<Result(Args...), Bytes> : public splice::erased_call<Result(Args...), Bytes> {
+  using Base = splice::erased_call<Result(Args...), Bytes>;
 
 public:
   AnyCall() = default;
@@ -40,13 +41,23 @@ public:
 };
 // An action: a call of nothing.
 using AnyAction = AnyCall<void()>;
+// What a call is erased into: an AnyCall as large as the smallest power of
+// two that holds it, kActionBytes at least -- so that any call fits, none is
+// put on the heap, and a widget is made once for each of a few sizes, not
+// once for each call.
+template <class Call>
+inline constexpr std::size_t kBytesOf = std::bit_ceil(std::max(kActionBytes, sizeof(splice::holder<Call>)));
+template <class Signature, class Call>
+using AnyCallFor = AnyCall<Signature, kBytesOf<Call>>;
+template <class Action>
+using AnyActionFor = AnyCallFor<void(), Action>;
 
 } // namespace skiff::widgets
 
 // Whether an erased call acts: where it holds something, NoAction not.
 export namespace skiff::scene {
-template <class Signature>
-[[nodiscard]] bool acts(const skiff::widgets::AnyCall<Signature> &call) noexcept {
+template <class Signature, std::size_t Bytes>
+[[nodiscard]] bool acts(const skiff::widgets::AnyCall<Signature, Bytes> &call) noexcept {
   return call.holds();
 }
 } // namespace skiff::scene

@@ -1015,21 +1015,19 @@ private:
 };
 } // namespace internal
 
-// What is sent: the text, as it reads plain.
-using AnySubmit = AnyCall<void(std::string_view)>;
-// The field over AnySubmit, AnyPictures and AnyBlocks, taking its own and
+// The field over an erased call, AnyPictures and AnyBlocks, taking its own and
 // erasing them: all of its code but this is that field's, made once.
 template <class OnSubmit, class Pictures, class Blocks>
-class ErasedTextArea : public internal::TextArea<AnySubmit, skiff::nodes::AnyPictures, AnyBlocks> {
-  using Base = internal::TextArea<AnySubmit, skiff::nodes::AnyPictures, AnyBlocks>;
+class ErasedTextArea : public internal::TextArea<AnyCallFor<void(std::string_view), OnSubmit>, skiff::nodes::AnyPictures, AnyBlocks> {
+  using Base = internal::TextArea<AnyCallFor<void(std::string_view), OnSubmit>, skiff::nodes::AnyPictures, AnyBlocks>;
 
 public:
   explicit ErasedTextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
-      : Base(std::move(placeholder), AnySubmit(std::move(onSubmit))) {
+      : Base(std::move(placeholder), AnyCallFor<void(std::string_view), OnSubmit>(std::move(onSubmit))) {
     this->erase();
   }
   ErasedTextArea(Theme theme, std::string placeholder, OnSubmit onSubmit = {})
-      : Base(std::move(theme), std::move(placeholder), AnySubmit(std::move(onSubmit))) {
+      : Base(std::move(theme), std::move(placeholder), AnyCallFor<void(std::string_view), OnSubmit>(std::move(onSubmit))) {
     this->erase();
   }
 

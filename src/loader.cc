@@ -91,10 +91,10 @@ private:
 
 // The loader over AnyAction, taking the action given and erasing it.
 template <class OnPress>
-class ErasedRadialLoader : public internal::RadialLoader<AnyAction> {
+class ErasedRadialLoader : public internal::RadialLoader<AnyActionFor<OnPress>> {
 public:
   explicit ErasedRadialLoader(float size = 44.0f, OnPress onPress = {})
-      : internal::RadialLoader<AnyAction>(size, AnyAction(std::move(onPress))) {}
+      : internal::RadialLoader<AnyActionFor<OnPress>>(size, AnyActionFor<OnPress>(std::move(onPress))) {}
 };
 // The loader: made for its action in a release build, over AnyAction
 // otherwise.

@@ -204,14 +204,14 @@ private:
 // The bar over erased calls, taking calls of their own types: all of its
 // code but this is internal::SliderBar<AnyCall...>'s, made once.
 template <class OnSet, class OnDone>
-class ErasedSliderBar : public internal::SliderBar<AnyCall<void(float)>, AnyCall<void(float)>> {
-  using Base = internal::SliderBar<AnyCall<void(float)>, AnyCall<void(float)>>;
+class ErasedSliderBar : public internal::SliderBar<AnyCallFor<void(float), OnSet>, AnyCallFor<void(float), OnDone>> {
+  using Base = internal::SliderBar<AnyCallFor<void(float), OnSet>, AnyCallFor<void(float), OnDone>>;
 
 public:
   explicit ErasedSliderBar(OnSet onSet = {}, OnDone onDone = {})
-      : Base(AnyCall<void(float)>(std::move(onSet)), AnyCall<void(float)>(std::move(onDone))) {}
+      : Base(AnyCallFor<void(float), OnSet>(std::move(onSet)), AnyCallFor<void(float), OnDone>(std::move(onDone))) {}
   ErasedSliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {})
-      : Base(std::move(theme), AnyCall<void(float)>(std::move(onSet)), AnyCall<void(float)>(std::move(onDone))) {}
+      : Base(std::move(theme), AnyCallFor<void(float), OnSet>(std::move(onSet)), AnyCallFor<void(float), OnDone>(std::move(onDone))) {}
 };
 // The bar: made for its calls in a release build, over erased ones otherwise.
 template <class OnSet = skiff::scene::NoAction, class OnDone = skiff::scene::NoAction>
@@ -523,10 +523,10 @@ private:
 // The switch over an erased action, taking one of its own type: all of
 // its code but this is internal::Toggle<AnyAction>'s, made once.
 template <class OnToggle>
-class ErasedToggle : public internal::Toggle<AnyAction> {
+class ErasedToggle : public internal::Toggle<AnyActionFor<OnToggle>> {
 public:
-  explicit ErasedToggle(OnToggle onToggle = {}) : internal::Toggle<AnyAction>(AnyAction(std::move(onToggle))) {}
-  ErasedToggle(Theme theme, OnToggle onToggle) : internal::Toggle<AnyAction>(std::move(theme), AnyAction(std::move(onToggle))) {}
+  explicit ErasedToggle(OnToggle onToggle = {}) : internal::Toggle<AnyActionFor<OnToggle>>(AnyActionFor<OnToggle>(std::move(onToggle))) {}
+  ErasedToggle(Theme theme, OnToggle onToggle) : internal::Toggle<AnyActionFor<OnToggle>>(std::move(theme), AnyActionFor<OnToggle>(std::move(onToggle))) {}
 };
 // The switch: made for its action in a release build, over an erased one
 // otherwise.

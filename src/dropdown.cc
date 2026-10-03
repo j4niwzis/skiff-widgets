@@ -151,12 +151,12 @@ private:
 
 // The dropdown button over AnyAction, taking the action given and erasing it.
 template <class OnOpen>
-class ErasedDropdownButton : public internal::DropdownButton<AnyAction> {
+class ErasedDropdownButton : public internal::DropdownButton<AnyActionFor<OnOpen>> {
 public:
   explicit ErasedDropdownButton(std::string label = {}, std::string value = {}, OnOpen onOpen = {})
-      : internal::DropdownButton<AnyAction>(std::move(label), std::move(value), AnyAction(std::move(onOpen))) {}
+      : internal::DropdownButton<AnyActionFor<OnOpen>>(std::move(label), std::move(value), AnyActionFor<OnOpen>(std::move(onOpen))) {}
   ErasedDropdownButton(Theme theme, std::string label = {}, std::string value = {}, OnOpen onOpen = {})
-      : internal::DropdownButton<AnyAction>(std::move(theme), std::move(label), std::move(value), AnyAction(std::move(onOpen))) {}
+      : internal::DropdownButton<AnyActionFor<OnOpen>>(std::move(theme), std::move(label), std::move(value), AnyActionFor<OnOpen>(std::move(onOpen))) {}
 };
 // The dropdown button: made for its action in a release build, over
 // AnyAction otherwise.
@@ -434,16 +434,14 @@ private:
 };
 } // namespace internal
 
-// A row chosen: by its index.
-using AnyChoice = AnyCall<void(int)>;
-// The dropdown list over AnyChoice, taking the action given and erasing it.
+// The dropdown list over an AnyCall of the row's index, taking the action given and erasing it.
 template <class OnChoose>
-class ErasedDropdownList : public internal::DropdownList<AnyChoice> {
+class ErasedDropdownList : public internal::DropdownList<AnyCallFor<void(int), OnChoose>> {
 public:
-  explicit ErasedDropdownList(OnChoose onChoose = {}) : internal::DropdownList<AnyChoice>(AnyChoice(std::move(onChoose))) {}
+  explicit ErasedDropdownList(OnChoose onChoose = {}) : internal::DropdownList<AnyCallFor<void(int), OnChoose>>(AnyCallFor<void(int), OnChoose>(std::move(onChoose))) {}
 };
 // The dropdown list: made for its action in a release build, over
-// AnyChoice otherwise.
+// an erased call otherwise.
 template <class OnChoose = skiff::scene::NoAction>
 using DropdownList = std::conditional_t<kErasedActions, ErasedDropdownList<OnChoose>, internal::DropdownList<OnChoose>>;
 

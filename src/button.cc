@@ -144,12 +144,12 @@ private:
 // The button over AnyAction, taking an action of its own type and erasing
 // it: all of its code but this is internal::Button<AnyAction>'s, made once.
 template <class Action>
-class ErasedButton : public internal::Button<AnyAction> {
+class ErasedButton : public internal::Button<AnyActionFor<Action>> {
 public:
   explicit ErasedButton(std::string label, Action action = {})
-      : internal::Button<AnyAction>(std::move(label), AnyAction(std::move(action))) {}
+      : internal::Button<AnyActionFor<Action>>(std::move(label), AnyActionFor<Action>(std::move(action))) {}
   ErasedButton(Theme theme, std::string label, Action action = {})
-      : internal::Button<AnyAction>(std::move(theme), std::move(label), AnyAction(std::move(action))) {}
+      : internal::Button<AnyActionFor<Action>>(std::move(theme), std::move(label), AnyActionFor<Action>(std::move(action))) {}
 };
 
 // The button: made for its action in a release build, over AnyAction

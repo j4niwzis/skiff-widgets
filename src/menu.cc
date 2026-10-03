@@ -350,15 +350,13 @@ private:
 };
 } // namespace internal
 
-// A menu's row chosen: the menu, and the row in it.
-using AnyMenuChoice = AnyCall<void(int, int)>;
-// The menu bar over AnyMenuChoice, taking the action given and erasing it.
+// The menu bar over an erased call, taking the action given and erasing it.
 template <class OnChoose>
-class ErasedMenuBar : public internal::MenuBar<AnyMenuChoice> {
+class ErasedMenuBar : public internal::MenuBar<AnyCallFor<void(int, int), OnChoose>> {
 public:
-  explicit ErasedMenuBar(OnChoose onChoose = {}) : internal::MenuBar<AnyMenuChoice>(AnyMenuChoice(std::move(onChoose))) {}
+  explicit ErasedMenuBar(OnChoose onChoose = {}) : internal::MenuBar<AnyCallFor<void(int, int), OnChoose>>(AnyCallFor<void(int, int), OnChoose>(std::move(onChoose))) {}
 };
-// The menu bar: made for its action in a release build, over AnyMenuChoice
+// The menu bar: made for its action in a release build, over an erased call
 // otherwise.
 template <class OnChoose = skiff::scene::NoAction>
 using MenuBar = std::conditional_t<kErasedActions, ErasedMenuBar<OnChoose>, internal::MenuBar<OnChoose>>;
