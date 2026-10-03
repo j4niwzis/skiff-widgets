@@ -293,7 +293,17 @@ private:
 // erasing it: all of its code but this is internal::BackdropPane<AnyBackdropSource>'s.
 template <BackdropSource Source>
 class ErasedBackdropPane : public internal::BackdropPane<AnyBackdropSource> {
+  using Base = internal::BackdropPane<AnyBackdropSource>;
+
 public:
+  // Its own handlers, as the wrapper's own: brought in here, so that they
+  // are taken for it. Else Node's defaults -- deducing `this`, an exact
+  // match for the wrapper -- beat the widget's own, which reach it through
+  // the base, and the widget took no key, text or press.
+  using Base::onPointer;
+  using Base::onKey;
+  using Base::onText;
+  using Base::onSemantic;
   explicit ErasedBackdropPane(Source source, float blur = -1.0f)
       : internal::BackdropPane<AnyBackdropSource>(AnyBackdropSource(std::move(source)), blur) {}
 };
@@ -574,7 +584,17 @@ private:
 // internal::Wallpaper<AnyBackdropOut>'s.
 template <class Out>
 class ErasedWallpaper : public internal::Wallpaper<AnyBackdropOut> {
+  using Base = internal::Wallpaper<AnyBackdropOut>;
+
 public:
+  // Its own handlers, as the wrapper's own: brought in here, so that they
+  // are taken for it. Else Node's defaults -- deducing `this`, an exact
+  // match for the wrapper -- beat the widget's own, which reach it through
+  // the base, and the widget took no key, text or press.
+  using Base::onPointer;
+  using Base::onKey;
+  using Base::onText;
+  using Base::onSemantic;
   ErasedWallpaper() { this->setOut(AnyBackdropOut::of<Out>()); }
 };
 // The wallpaper: made for its Out in a release build, over AnyBackdropOut

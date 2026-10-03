@@ -208,6 +208,14 @@ class ErasedSliderBar : public internal::SliderBar<AnyCallFor<void(float), OnSet
   using Base = internal::SliderBar<AnyCallFor<void(float), OnSet>, AnyCallFor<void(float), OnDone>>;
 
 public:
+  // Its own handlers, as the wrapper's own: brought in here, so that they
+  // are taken for it. Else Node's defaults -- deducing `this`, an exact
+  // match for the wrapper -- beat the widget's own, which reach it through
+  // the base, and the widget took no key, text or press.
+  using Base::onPointer;
+  using Base::onKey;
+  using Base::onText;
+  using Base::onSemantic;
   explicit ErasedSliderBar(OnSet onSet = {}, OnDone onDone = {})
       : Base(AnyCallFor<void(float), OnSet>(std::move(onSet)), AnyCallFor<void(float), OnDone>(std::move(onDone))) {}
   ErasedSliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {})
@@ -524,7 +532,17 @@ private:
 // its code but this is internal::Toggle<AnyAction>'s, made once.
 template <class OnToggle>
 class ErasedToggle : public internal::Toggle<AnyActionFor<OnToggle>> {
+  using Base = internal::Toggle<AnyActionFor<OnToggle>>;
+
 public:
+  // Its own handlers, as the wrapper's own: brought in here, so that they
+  // are taken for it. Else Node's defaults -- deducing `this`, an exact
+  // match for the wrapper -- beat the widget's own, which reach it through
+  // the base, and the widget took no key, text or press.
+  using Base::onPointer;
+  using Base::onKey;
+  using Base::onText;
+  using Base::onSemantic;
   explicit ErasedToggle(OnToggle onToggle = {}) : internal::Toggle<AnyActionFor<OnToggle>>(AnyActionFor<OnToggle>(std::move(onToggle))) {}
   ErasedToggle(Theme theme, OnToggle onToggle) : internal::Toggle<AnyActionFor<OnToggle>>(std::move(theme), AnyActionFor<OnToggle>(std::move(onToggle))) {}
 };
