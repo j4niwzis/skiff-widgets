@@ -325,6 +325,54 @@ struct AnyBackdropOut {
   void offer(skiff::scene::NodeId id, const Backdrop &one) const { fOffer(id, one); }
 };
 
+// Telegram's freeform gradient, as lib_ui and Telegram's apps make it: up
+// to four colours, each at its point, turned in a small swirl about the
+// centre; each pixel the colours weighted by the fourth power of how near
+// it is to each (0.9 less the distance, nothing past it). Made 64 by 64,
+// and stretched over what it fills.
+[[nodiscard]] inline skia::Sp<skia::SkImage> freeformGradient(const std::vector<skia::SkColor> &colours) {
+  constexpr int kSide = 64;
+  constexpr std::array<std::pair<float, float>, 4> kPoints{{{0.80f, 0.10f}, {0.35f, 0.25f}, {0.20f, 0.90f}, {0.65f, 0.75f}}};
+  skia::SkBitmap bitmap;
+  if (colours.empty() || !bitmap.tryAllocN32Pixels(kSide, kSide)) {
+    return nullptr;
+  }
+  skia::SkCanvas into(bitmap);
+  const auto channel = [](skia::SkColor colour, int shift) { return static_cast<float>((colour >> shift) & 0xFFu); };
+  const auto at = [&](int x, int y) {
+    const float centreX = static_cast<float>(x) / kSide - 0.5f;
+    const float centreY = static_cast<float>(y) / kSide - 0.5f;
+    const float swirl = 0.35f * std::sqrt(centreX * centreX + centreY * centreY);
+    const float theta = swirl * swirl * 0.8f * 8.0f;
+    const float px = std::clamp(0.5f + centreX * std::cos(theta) - centreY * std::sin(theta), 0.0f, 1.0f);
+    const float py = std::clamp(0.5f + centreX * std::sin(theta) + centreY * std::cos(theta), 0.0f, 1.0f);
+    const auto weights = std::views::iota(std::size_t{0}, std::min(colours.size(), kPoints.size())) |
+                         std::views::transform([&](std::size_t i) {
+                           const float dx = px - kPoints[i].first, dy = py - kPoints[i].second;
+                           const float near = std::max(0.0f, 0.9f - std::sqrt(dx * dx + dy * dy));
+                           return std::pair{i, near * near * near * near};
+                         }) |
+                         std::ranges::to<std::vector>();
+    const float sum = std::ranges::fold_left(weights | std::views::values, 0.0f, std::plus{});
+    const auto mixed = [&](int shift) {
+      return sum <= 0.0f ? channel(colours.front(), shift)
+                         : std::ranges::fold_left(weights, 0.0f, [&](float so_far, const auto &one) {
+                             return so_far + channel(colours[one.first], shift) * one.second;
+                           }) / sum;
+    };
+    return skia::colorSetARGB(255, static_cast<unsigned>(std::lround(mixed(16))), static_cast<unsigned>(std::lround(mixed(8))),
+                              static_cast<unsigned>(std::lround(mixed(0))));
+  };
+  std::ranges::for_each(std::views::iota(0, kSide), [&](int y) {
+    std::ranges::for_each(std::views::iota(0, kSide), [&](int x) {
+      skia::SkPaint paint;
+      paint.setColor(at(x, y));
+      into.drawRect(skia::SkRect::MakeXYWH(static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f), paint);
+    });
+  });
+  return bitmap.asImage();
+}
+
 // A chat's wallpaper, as Telegram's: a gradient and over it a pattern in a
 // colour of its own -- or a picture of the user's -- scaled to cover it and
 // centred; or nothing, what is behind it showing (a plain colour). The
@@ -397,6 +445,19 @@ public:
     fBlurs = nullptr;
     this->markDamaged();
   }
+  // Telegram's freeform gradient of these colours (freeformGradient), in
+  // place of the gradient, the pattern and a picture; none, none.
+  void setFreeform(std::vector<skia::SkColor> colours) {
+    if (colours == fFreeform) {
+      return;
+    }
+    this->keepOld();
+    fFreeform = std::move(colours);
+    fFreeformImage = freeformGradient(fFreeform);
+    fDrawn = nullptr;
+    fBlurs = nullptr;
+    this->markDamaged();
+  }
   // A picture in place of the gradient and the pattern; none, none.
   void setPicture(skia::Sp<skia::SkImage> picture) {
     if (picture == fPicture) {
@@ -460,7 +521,7 @@ public:
       skiff::paint::verticalGradient(canvas, box, fGradient->top, fGradient->bottom, alpha);
     }
     const bool patterned = fPattern && fPattern->width > 0.0f && fPattern->height > 0.0f && !fPattern->steps.empty();
-    if (!fPicture && !patterned) {
+    if (!fPicture && !patterned && !fFreeformImage) {
       this->offerBackdrop(canvas, box);
       return;
     }
@@ -515,7 +576,9 @@ private:
   [[nodiscard]] bool opaque() const {
     const auto solid = [](skia::SkColor colour) { return (colour >> 24) == 0xFFu; };
     return fOpacity >= 1.0f && !fFade.moving() &&
-           (fPicture ? fPicture->isOpaque() : fGradient && solid(fGradient->top) && solid(fGradient->bottom));
+           (fPicture           ? fPicture->isOpaque()
+            : fFreeformImage   ? true
+                               : fGradient && solid(fGradient->top) && solid(fGradient->bottom));
   }
   // The picture, or the pattern, in pixels, width by height: covering them,
   // centred.
@@ -526,6 +589,12 @@ private:
     }
     bitmap.eraseColor(0);
     skia::SkCanvas into(bitmap);
+    // The freeform gradient: stretched over all of it, as tdesktop does.
+    if (fFreeformImage && !fPicture) {
+      into.drawImageRect(fFreeformImage, skia::SkRect::MakeIWH(width, height),
+                         skia::SkSamplingOptions(skia::SkFilterMode::kLinear));
+      return bitmap.asImage();
+    }
     if (fPicture) {
       const float w = static_cast<float>(fPicture->width()), h = static_cast<float>(fPicture->height());
       if (w <= 0.0f || h <= 0.0f) {
@@ -559,6 +628,8 @@ private:
   }
 
   std::optional<skiff::scene::Gradient> fGradient;
+  std::vector<skia::SkColor> fFreeform;
+  skia::Sp<skia::SkImage> fFreeformImage;
   skia::Sp<skia::SkImage> fPicture;
   std::shared_ptr<const Pattern> fPattern;
   skia::SkColor fColour = 0;
