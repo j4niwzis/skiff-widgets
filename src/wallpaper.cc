@@ -5,6 +5,7 @@ import skia;
 import splice;
 import skiff.paint;
 import skiff.scene;
+export import skiff.widgets.erased;
 
 export namespace skiff::widgets {
 
@@ -219,7 +220,34 @@ concept BackdropSource = std::copy_constructible<Source> && requires(const Sourc
 // What of the backdrop is under it on the screen, in its box and corner
 // radius: frosted glass, behind what a node holds -- its first part, filling
 // it. As blurred as setBlur says (0 to 1); below 0, the backdrop's own.
-template <BackdropSource Source> class BackdropPane : public skiff::scene::Node {
+// The backdrops a source gives, drawn: those it is called for.
+template <BackdropSource Source>
+void drawFrom(const Source &source, skia::SkCanvas *canvas, float blur, const skia::SkRRect &shape, float alpha) {
+  drawBackdrops(canvas, source(), blur, shape, alpha);
+}
+// A source, whatever it is: its backdrops drawn as they would be, lazily, by
+// the code made where it was erased. Erasure, outside a release build only.
+class AnyBackdropSource {
+public:
+  template <BackdropSource Source>
+    requires(!std::same_as<std::remove_cvref_t<Source>, AnyBackdropSource>)
+  explicit AnyBackdropSource(Source source)
+      : fDraw([source = std::move(source)](skia::SkCanvas *canvas, float blur, const skia::SkRRect &shape, float alpha) {
+          drawFrom(source, canvas, blur, shape, alpha);
+        }) {}
+  void draw(skia::SkCanvas *canvas, float blur, const skia::SkRRect &shape, float alpha) const {
+    fDraw(canvas, blur, shape, alpha);
+  }
+
+private:
+  std::function<void(skia::SkCanvas *, float, const skia::SkRRect &, float)> fDraw;
+};
+inline void drawFrom(const AnyBackdropSource &source, skia::SkCanvas *canvas, float blur, const skia::SkRRect &shape,
+                     float alpha) {
+  source.draw(canvas, blur, shape, alpha);
+}
+namespace internal {
+template <class Source> class BackdropPane : public skiff::scene::Node {
 public:
   explicit BackdropPane(Source source, float blur = -1.0f) : fSource(std::move(source)), fBlur(blur) {}
   void setBlur(float blur) {
@@ -242,7 +270,7 @@ public:
     // Its shape as its State says: its corner radius, or each corner's own
     // -- as what it is behind says them.
     const skia::SkRRect shape = skiff::scene::detail::roundedBox(fState, fState.fBounds);
-    drawBackdrops(canvas, fSource(), fBlur, shape, alpha);
+    drawFrom(fSource, canvas, fBlur, shape, alpha);
     if (fTint) {
       skia::SkPaint paint;
       paint.setAntiAlias(true);
@@ -257,10 +285,32 @@ private:
   float fBlur;
   std::optional<skia::SkColor> fTint;
 };
+} // namespace internal
+
+// The pane over AnyBackdropSource, taking a source of its own type and
+// erasing it: all of its code but this is internal::BackdropPane<AnyBackdropSource>'s.
+template <BackdropSource Source>
+class ErasedBackdropPane : public internal::BackdropPane<AnyBackdropSource> {
+public:
+  explicit ErasedBackdropPane(Source source, float blur = -1.0f)
+      : internal::BackdropPane<AnyBackdropSource>(AnyBackdropSource(std::move(source)), blur) {}
+};
+// The pane: made for its source in a release build, over AnyBackdropSource
+// otherwise.
+template <BackdropSource Source>
+using BackdropPane = std::conditional_t<kErasedActions, ErasedBackdropPane<Source>, internal::BackdropPane<Source>>;
+
 
 // Where a wallpaper's backdrop goes: nowhere, unless the program says.
 struct NoBackdropOut {
   static void offer(skiff::scene::NodeId, const Backdrop &) {}
+};
+// Where a wallpaper offers, whatever it is: through its one function.
+// Erasure, outside a release build only.
+struct AnyBackdropOut {
+  void (*fOffer)(skiff::scene::NodeId, const Backdrop &) = &NoBackdropOut::offer;
+  template <class Out> [[nodiscard]] static AnyBackdropOut of() { return {&Out::offer}; }
+  void offer(skiff::scene::NodeId id, const Backdrop &one) const { fOffer(id, one); }
 };
 
 // A chat's wallpaper, as Telegram's: a gradient and over it a pattern in a
@@ -270,8 +320,11 @@ struct NoBackdropOut {
 // behind a list is repainted at every step of a scroll.
 // What it blurs of itself, for what frosts, is offered to Out::offer(its id,
 // backdrop) as it is drawn: a callback by its type.
+namespace internal {
 template <class Out = NoBackdropOut> class Wallpaper : public skiff::scene::Node {
 public:
+  // Where it offers what it blurs: what an erased wallpaper is told of its own.
+  void setOut(Out out) { fOut = std::move(out); }
   void setGradient(std::optional<skiff::scene::Gradient> gradient) {
     if (gradient == fGradient) {
       return;
@@ -440,10 +493,11 @@ public:
       std::ranges::for_each(fAmounts, [&](float amount) { static_cast<void>(made->at(amount)); });
       fBlurs = std::move(made);
     }
-    Out::offer(fState.fId, Backdrop{fBlurs, fAmount, device, this->opaque(), skiff::scene::work::frameNumber()});
+    fOut.offer(fState.fId, Backdrop{fBlurs, fAmount, device, this->opaque(), skiff::scene::work::frameNumber()});
   }
 
 private:
+  [[no_unique_address]] Out fOut{};
   // Whether nothing under it shows through: drawn whole, its look settled,
   // its picture or its gradient opaque.
   [[nodiscard]] bool opaque() const {
@@ -512,5 +566,19 @@ private:
   int fDrawnWidth = 0;
   int fDrawnHeight = 0;
 };
+} // namespace internal
+
+// The wallpaper over AnyBackdropOut, told its own: all of its code but this is
+// internal::Wallpaper<AnyBackdropOut>'s.
+template <class Out>
+class ErasedWallpaper : public internal::Wallpaper<AnyBackdropOut> {
+public:
+  ErasedWallpaper() { this->setOut(AnyBackdropOut::of<Out>()); }
+};
+// The wallpaper: made for its Out in a release build, over AnyBackdropOut
+// otherwise.
+template <class Out = NoBackdropOut>
+using Wallpaper = std::conditional_t<kErasedActions, ErasedWallpaper<Out>, internal::Wallpaper<Out>>;
+
 
 } // namespace skiff::widgets
