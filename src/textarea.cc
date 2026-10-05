@@ -275,6 +275,20 @@ public:
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &at,
                  skiff::scene::PointerReply &reply) {
+    // A right press -- a long press, on a phone: the text menu asked of the
+    // host, the caret where it was pressed unless that is in what is
+    // selected, which the menu's Cut and Copy then take.
+    if (at.button == 3) {
+      const std::size_t pressed = this->outOfAtoms(this->offsetAt(at.x, at.y));
+      if (!this->hasSelection() || pressed < this->low() || pressed > this->high()) {
+        this->breakRun();
+        fCaret = fAnchor = pressed;
+      }
+      this->showCaret();
+      skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = this->hasSelection(), .masked = fMasked});
+      reply.handle();
+      return;
+    }
     this->breakRun();  // the caret put elsewhere: what is typed next is a step of its own
     fCaret = this->outOfAtoms(this->offsetAt(at.x, at.y));
     fAnchor = fCaret;

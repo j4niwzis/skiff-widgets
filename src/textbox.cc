@@ -107,6 +107,17 @@ public:
   [[nodiscard]] bool onClick(float x, float y) {
     return fState.fBounds.contains(x, y);
   }
+  // A right press -- a long press, on a phone: the text menu asked of the
+  // host. Any other press is the click's.
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &at,
+                 skiff::scene::PointerReply &reply) {
+    if (at.button != 3) {
+      return;
+    }
+    skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = fAll, .masked = fMasked});
+    reply.handle();
+  }
 
   using Node::onText;
   void onText(skiff::scene::phase::target, const skiff::scene::text::commit &typed,
