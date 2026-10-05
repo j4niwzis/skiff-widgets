@@ -306,6 +306,8 @@ public:
   using Node::onText;
   void onText(skiff::scene::phase::target, const skiff::scene::text::commit &typed,
               skiff::scene::Reply &reply) {
+    // What was being composed is what the commit puts in: taken out first.
+    this->dropComposition();
     // The program's blocks first, as for a key: what is typed may become
     // something else where it goes -- "--" a dash.
     if (!typed.text.empty() && !fMasked && !fSingle && !this->hasSelection()) {
@@ -319,6 +321,30 @@ public:
       this->insert(std::string(typed.text));
     }
     reply.handle();
+  }
+  // An input method's composition -- a phone keyboard's word as it is typed,
+  // before it is committed: in the text at the caret, in place of the one
+  // before, so that it is seen as it is typed; taken out again as the
+  // commit comes, which puts in what was chosen. A field that took only
+  // commits showed nothing of a word typed on Gboard until a space.
+  void onText(skiff::scene::phase::target, const skiff::scene::text::compose &composing,
+              skiff::scene::Reply &reply) {
+    this->dropComposition();
+    if (!composing.text.empty()) {
+      const std::size_t from = this->hasSelection() ? this->low() : fCaret;
+      this->insert(std::string(composing.text));
+      fComposed = std::pair{from, fCaret};
+    }
+    reply.handle();
+  }
+  void dropComposition() {
+    if (!fComposed) {
+      return;
+    }
+    const auto [from, to] = *std::exchange(fComposed, std::nullopt);
+    this->eraseText(from, std::min(to, fText.size()));
+    fCaret = fAnchor = from;
+    this->edited();
   }
   // A block's edit put in: a step of its own to undo.
   void applyEdit(const TextEdit &edit) {
@@ -720,6 +746,8 @@ private:
   };
   std::vector<Snapshot> fUndo, fRedo;
   std::optional<std::size_t> fTypingAt, fErasingAt;
+  // The input method's composition in the text, while there is one: from, to.
+  std::optional<std::pair<std::size_t, std::size_t>> fComposed;
   static constexpr std::size_t kMostSteps = 200;
   void remember(bool runsOn) {
     if (!runsOn) {
