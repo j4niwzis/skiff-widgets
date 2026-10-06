@@ -152,6 +152,11 @@ struct FieldChange {
   std::size_t caret = 0;
   std::size_t anchor = 0;
 };
+// Whether a format is one: a field of NoFormat keeps none.
+template <class Format>
+inline constexpr bool kFormatsIn = true;
+template <>
+inline constexpr bool kFormatsIn<NoFormat> = false;
 // The format a field's Blocks name, NoFormat where they name none.
 template <class Blocks>
 struct format_of {
@@ -398,6 +403,8 @@ public:
     this->invalidateLayout();
   }
   [[nodiscard]] bool hasSelection() const noexcept { return fCaret != fAnchor; }
+  // What is selected: from its start to its end, the caret either.
+  [[nodiscard]] std::pair<std::size_t, std::size_t> selectionRange() const noexcept { return {this->low(), this->high()}; }
 
   void measure(const skia::SkRect &parent) {
     const float width = fState.fRelativeSizeAxes.has<skiff::scene::axis::x>()
@@ -464,7 +471,8 @@ public:
         fCaret = fAnchor = pressed;
       }
       this->showCaret();
-      skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = this->hasSelection(), .masked = fMasked});
+      skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{
+          .selection = this->hasSelection(), .masked = fMasked, .formats = kFormatsIn<Format> && !fSingle});
       reply.handle();
       return;
     }
