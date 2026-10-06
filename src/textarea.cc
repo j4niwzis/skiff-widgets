@@ -80,6 +80,91 @@ struct TextEdit {
   std::string with;
   std::size_t caret = 0;
 };
+// Inline formatting: what the program makes of runs of the text -- bold, a
+// link -- as its Blocks' `format`, a type of the program's that the field
+// keeps but never looks into. The field keeps spans of it beside the text,
+// moved along with every edit and kept in each step of undo; of the Blocks
+// it asks only how a run with a format looks (runLook) and whether what is
+// typed at a span's end goes into it (grows) -- a bold word goes on bold, a
+// link stops where it ends. What makes and takes spans away -- a shortcut, a
+// mark typed -- is the program's too: its hooks are given the field as it
+// is (a FieldView) and give back what to change (a FieldChange), which the
+// field makes as one step of undo. A field whose Blocks name no format has
+// none, and draws as it did.
+struct NoFormat {
+  friend bool operator==(const NoFormat &, const NoFormat &) = default;
+};
+template <class Format>
+struct TextSpan {
+  std::size_t first = 0;
+  std::size_t last = 0;
+  Format format{};
+  friend bool operator==(const TextSpan &, const TextSpan &) = default;
+};
+// How a run is drawn: its face, monospace or not, lines under and through
+// it, the accent for its colour, and a faint plate behind it. Where spans
+// overlap, the run has all of theirs.
+struct RunLook {
+  skiff::paint::TextFace face{};
+  bool monospace = false;
+  bool underline = false;
+  bool strike = false;
+  bool accent = false;
+  bool plate = false;
+  friend bool operator==(const RunLook &, const RunLook &) = default;
+};
+[[nodiscard]] constexpr RunLook joined(const RunLook &a, const RunLook &b) noexcept {
+  return {.face = {.bold = a.face.bold || b.face.bold, .italic = a.face.italic || b.face.italic},
+          .monospace = a.monospace || b.monospace,
+          .underline = a.underline || b.underline,
+          .strike = a.strike || b.strike,
+          .accent = a.accent || b.accent,
+          .plate = a.plate || b.plate};
+}
+// The field as a hook sees it: its text, the selection (the caret and where
+// it was started from) and its spans.
+template <class Format>
+struct FieldView {
+  std::string_view text;
+  std::size_t caret = 0;
+  std::size_t anchor = 0;
+  const std::vector<TextSpan<Format>> &spans;
+  [[nodiscard]] std::size_t low() const noexcept { return std::min(caret, anchor); }
+  [[nodiscard]] std::size_t high() const noexcept { return std::max(caret, anchor); }
+  [[nodiscard]] bool selection() const noexcept { return caret != anchor; }
+};
+// [from, to) replaced by `with`.
+struct TextReplace {
+  std::size_t from = 0;
+  std::size_t to = 0;
+  std::string with;
+};
+// What a hook has the field do: its text replaced in places, each on the
+// text as the ones before left it (spans moved along as by typing); then,
+// where it says, its spans set anew, and spans added; and the selection put.
+template <class Format>
+struct FieldChange {
+  std::vector<TextReplace> edits;
+  std::optional<std::vector<TextSpan<Format>>> spans;
+  // Spans put on after the edits (and after `spans`, where it is set): a run
+  // its marks made, where the marks were taken out.
+  std::vector<TextSpan<Format>> added;
+  std::size_t caret = 0;
+  std::size_t anchor = 0;
+};
+// The format a field's Blocks name, NoFormat where they name none.
+template <class Blocks>
+struct format_of {
+  using type = NoFormat;
+};
+template <class Blocks>
+  requires requires { typename Blocks::format; }
+struct format_of<Blocks> {
+  using type = typename Blocks::format;
+};
+template <class Blocks>
+using FormatOf = typename format_of<Blocks>::type;
+
 // No blocks: every paragraph plain.
 struct NoBlocks {
   [[nodiscard]] static BlockLook look(std::string_view, std::size_t) { return {}; }
@@ -103,17 +188,83 @@ template <class Blocks>
 [[nodiscard]] std::optional<TextEdit> typedBy(const Blocks &, std::string_view, std::size_t, std::string_view) {
   return std::nullopt;
 }
+// A run's look, as the Blocks say; plain where they say nothing.
+template <class Blocks, class Format>
+  requires requires(const Blocks &blocks, const Format &format) {
+    { blocks.runLook(format) } -> std::convertible_to<RunLook>;
+  }
+[[nodiscard]] RunLook runLookBy(const Blocks &blocks, const Format &format) {
+  return blocks.runLook(format);
+}
+template <class Blocks, class Format>
+[[nodiscard]] RunLook runLookBy(const Blocks &, const Format &) {
+  return {};
+}
+// Whether text typed at a span's end goes into it: yes, unless the Blocks
+// say otherwise.
+template <class Blocks, class Format>
+  requires requires(const Blocks &blocks, const Format &format) {
+    { blocks.grows(format) } -> std::convertible_to<bool>;
+  }
+[[nodiscard]] bool growsBy(const Blocks &blocks, const Format &format) {
+  return blocks.grows(format);
+}
+template <class Blocks, class Format>
+[[nodiscard]] bool growsBy(const Blocks &, const Format &) {
+  return true;
+}
+// A key, as the Blocks take it with the field as it is -- a selection too:
+// a shortcut's change; nothing where it is not theirs.
+template <class Blocks, class Format>
+  requires requires(const Blocks &blocks, const FieldView<Format> &view, const skiff::scene::key::down &press) {
+    { blocks.edit(view, press) } -> std::convertible_to<std::optional<FieldChange<Format>>>;
+  }
+[[nodiscard]] std::optional<FieldChange<Format>> editBy(const Blocks &blocks, const FieldView<Format> &view,
+                                                        const skiff::scene::key::down &press) {
+  return blocks.edit(view, press);
+}
+template <class Blocks, class Format>
+[[nodiscard]] std::optional<FieldChange<Format>> editBy(const Blocks &, const FieldView<Format> &,
+                                                        const skiff::scene::key::down &) {
+  return std::nullopt;
+}
+// What was just typed, as the Blocks make it over -- a mark closing a run
+// made its format: the change; nothing where it stays as typed.
+template <class Blocks, class Format>
+  requires requires(const Blocks &blocks, const FieldView<Format> &view) {
+    { blocks.typedIn(view) } -> std::convertible_to<std::optional<FieldChange<Format>>>;
+  }
+[[nodiscard]] std::optional<FieldChange<Format>> typedInBy(const Blocks &blocks, const FieldView<Format> &view) {
+  return blocks.typedIn(view);
+}
+template <class Blocks, class Format>
+[[nodiscard]] std::optional<FieldChange<Format>> typedInBy(const Blocks &, const FieldView<Format> &) {
+  return std::nullopt;
+}
 // A field's blocks, whatever they are: asked as they would be, through their
-// four functions. Erasure, outside a release build only.
-struct AnyBlocks {
+// functions -- for a format, the field's spans of it. Erasure, outside a
+// release build only.
+template <class Format>
+struct AnyBlocksOf {
+  using format = Format;
   BlockLook (*fLook)(std::string_view, std::size_t) = &NoBlocks::look;
   void (*fDrawBehind)(skia::SkCanvas *, const skiff::paint::Painter &, std::string_view, std::span<const ShownLine>,
                       const skia::SkRect &, const Theme &, float, float) = &NoBlocks::drawBehind;
   std::optional<TextEdit> (*fKey)(std::string_view, std::size_t, const skiff::scene::key::down &) = &NoBlocks::key;
   std::optional<TextEdit> (*fTyped)(std::string_view, std::size_t, std::string_view) = &NoBlocks::typed;
-  template <class Blocks> [[nodiscard]] static AnyBlocks of() {
+  RunLook (*fRunLook)(const Format &) = [](const Format &) { return RunLook{}; };
+  bool (*fGrows)(const Format &) = [](const Format &) { return true; };
+  std::optional<FieldChange<Format>> (*fEdit)(const FieldView<Format> &, const skiff::scene::key::down &) =
+      [](const FieldView<Format> &, const skiff::scene::key::down &) { return std::optional<FieldChange<Format>>(); };
+  std::optional<FieldChange<Format>> (*fTypedIn)(const FieldView<Format> &) =
+      [](const FieldView<Format> &) { return std::optional<FieldChange<Format>>(); };
+  template <class Blocks> [[nodiscard]] static AnyBlocksOf of() {
     return {&Blocks::look, &Blocks::drawBehind, &Blocks::key,
-            [](std::string_view text, std::size_t caret, std::string_view typed) { return typedBy(Blocks{}, text, caret, typed); }};
+            [](std::string_view text, std::size_t caret, std::string_view typed) { return typedBy(Blocks{}, text, caret, typed); },
+            [](const Format &format) { return runLookBy(Blocks{}, format); },
+            [](const Format &format) { return growsBy(Blocks{}, format); },
+            [](const FieldView<Format> &view, const skiff::scene::key::down &press) { return editBy(Blocks{}, view, press); },
+            [](const FieldView<Format> &view) { return typedInBy(Blocks{}, view); }};
   }
   [[nodiscard]] BlockLook look(std::string_view text, std::size_t start) const { return fLook(text, start); }
   void drawBehind(skia::SkCanvas *canvas, const skiff::paint::Painter &p, std::string_view text,
@@ -128,12 +279,25 @@ struct AnyBlocks {
   [[nodiscard]] std::optional<TextEdit> typed(std::string_view text, std::size_t caret, std::string_view what) const {
     return fTyped(text, caret, what);
   }
+  [[nodiscard]] RunLook runLook(const Format &format) const { return fRunLook(format); }
+  [[nodiscard]] bool grows(const Format &format) const { return fGrows(format); }
+  [[nodiscard]] std::optional<FieldChange<Format>> edit(const FieldView<Format> &view,
+                                                        const skiff::scene::key::down &press) const {
+    return fEdit(view, press);
+  }
+  [[nodiscard]] std::optional<FieldChange<Format>> typedIn(const FieldView<Format> &view) const {
+    return fTypedIn(view);
+  }
 };
+// Blocks with no format, erased: as they were before formats.
+using AnyBlocks = AnyBlocksOf<NoFormat>;
 namespace internal {
 template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures, class Blocks = NoBlocks>
 class TextArea : public skiff::scene::Node {
 public:
   using Atom = TextAtom;
+  using Format = FormatOf<Blocks>;
+  using Span = TextSpan<Format>;
   explicit TextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
       : fPlaceholder(std::move(placeholder)), fOnSubmit(std::move(onSubmit)) {
     fState.fHeight = this->heightFor(1);
@@ -159,8 +323,23 @@ public:
     this->breakRun();
     fText = std::move(text);
     fAtoms.clear();
+    fSpans.clear();
     fCaret = fAnchor = fText.size();
     this->edited();
+  }
+  // Its spans: the program's formats over runs of the text, by offsets in
+  // text(). Set: as they are given, those past the text cut to it.
+  [[nodiscard]] const std::vector<Span> &spans() const noexcept { return fSpans; }
+  void setSpans(std::vector<Span> spans) {
+    fSpans = std::move(spans);
+    this->keepSpansIn();
+    this->edited();
+  }
+  // The spans by offsets in plainText(): what is sent with it.
+  [[nodiscard]] std::vector<Span> plainSpans() const {
+    return std::ranges::to<std::vector<Span>>(std::views::transform(fSpans, [this](const Span &one) {
+      return Span{this->plainOffset(one.first), this->plainOffset(one.last), one.format};
+    }));
   }
   // What is between two offsets selected, as a picker replaces what was
   // typed for it (an @ and a name begun).
@@ -333,8 +512,34 @@ public:
     }
     if (!typed.text.empty()) {
       this->insert(std::string(typed.text));
+      // What was typed, as the program makes it over: a closing mark.
+      if (!fMasked && !fSingle) {
+        if (std::optional<FieldChange<Format>> change = typedInBy(fBlocks, this->view())) {
+          this->applyChange(std::move(*change));
+        }
+      }
     }
     reply.handle();
+  }
+  // A hook's change made: a step of its own to undo.
+  void applyChange(FieldChange<Format> change) {
+    this->remember(false);
+    this->breakRun();
+    for (const TextReplace &one : change.edits) {
+      const std::size_t from = std::min(one.from, fText.size());
+      const std::size_t to = std::clamp(one.to, from, fText.size());
+      this->eraseText(from, to);
+      fText.insert(from, one.with);
+      this->shiftAtoms(from, static_cast<std::ptrdiff_t>(one.with.size()));
+    }
+    if (change.spans) {
+      fSpans = std::move(*change.spans);
+    }
+    std::ranges::move(change.added, std::back_inserter(fSpans));
+    this->keepSpansIn();
+    fCaret = this->outOfAtoms(std::min(change.caret, fText.size()), true);
+    fAnchor = std::min(change.anchor, fText.size());
+    this->edited();
   }
   // An input method's composition -- a phone keyboard's word as it is typed,
   // before it is committed: in the text at the caret, in place of the one
@@ -404,7 +609,15 @@ public:
         press.key == keys::kHome || press.key == keys::kEnd) {
       this->breakRun();
     }
-    // The program's blocks first: a key that means something in one of
+    // The program's formats first: a shortcut, with what is selected.
+    if (!fMasked && !fSingle) {
+      if (std::optional<FieldChange<Format>> change = editBy(fBlocks, this->view(), press)) {
+        this->applyChange(std::move(*change));
+        reply.handle();
+        return;
+      }
+    }
+    // The program's blocks next: a key that means something in one of
     // them -- Enter in a quote -- is theirs.
     if (!fMasked && !fSingle && !this->hasSelection()) {
       if (std::optional<TextEdit> edit = fBlocks.key(fText, fCaret, press)) {
@@ -599,9 +812,23 @@ private:
                 float alpha) const {
     const skiff::paint::Painter p = this->painterFor(field, line);
     std::size_t at = line.fStart;
+    // The text up to `to`, run by run, each as its formats look.
     const auto plain = [&](std::size_t to) {
-      if (to > at) {
-        p.text(this->shown(at, to), left + this->xAt(p, line, at), y, fFontSize, fTheme.fText, alpha);
+      for (const auto &[from, till, look] : this->runsOf(at, to)) {
+        const float x = left + this->xAt(p, line, from);
+        const float width = this->xAt(p, line, till) - this->xAt(p, line, from);
+        if (look.plate) {
+          p.fillRounded(skia::SkRect::MakeXYWH(x - 1.0f, y - fFontSize, width + 2.0f, fFontSize * 1.3f), 3.0f,
+                        fTheme.fTextFaint, alpha * 0.3f);
+        }
+        const skia::SkColor colour = look.accent ? fTheme.fAccent : fTheme.fText;
+        this->painterOf(p, look).text(this->shown(from, till), x, y, fFontSize, colour, alpha, look.face);
+        if (look.underline) {
+          p.fillRect(skia::SkRect::MakeXYWH(x, y + fFontSize * 0.14f, width, 1.0f), colour, alpha);
+        }
+        if (look.strike) {
+          p.fillRect(skia::SkRect::MakeXYWH(x, y - fFontSize * 0.3f, width, 1.0f), colour, alpha);
+        }
       }
     };
     if (!fMasked) {
@@ -678,6 +905,10 @@ private:
   }
   // Atoms at or past `from` moved by `by` bytes.
   void shiftAtoms(std::size_t from, std::ptrdiff_t by) {
+    // Text put in: the spans too. (Text taken out moves them in eraseText.)
+    if (by > 0) {
+      this->spansInserted(from, static_cast<std::size_t>(by));
+    }
     for (Atom &one : fAtoms) {
       if (one.first >= from) {
         one.first = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.first) + by);
@@ -688,6 +919,7 @@ private:
   // Text taken out: atoms it cuts into gone, those after it moved back.
   void eraseText(std::size_t from, std::size_t to) {
     fText.erase(from, to - from);
+    this->spansErased(from, to);
     std::erase_if(fAtoms, [&](const Atom &one) { return one.first < to && one.last > from; });
     this->shiftAtoms(to, -static_cast<std::ptrdiff_t>(to - from));
   }
@@ -727,7 +959,107 @@ private:
   }
   [[nodiscard]] float xAt(const skiff::paint::Painter &field, const Line &line, std::size_t offset) const {
     const skiff::paint::Painter p = this->painterFor(field, line);
-    return this->indentOf(line) + p.measure(this->shown(line.fStart, std::min(offset, line.fEnd)), fFontSize);
+    return this->indentOf(line) + this->widthOf(p, line.fStart, std::min(offset, line.fEnd));
+  }
+  // How wide the text between two offsets is drawn: run by run, each in its
+  // face.
+  [[nodiscard]] float widthOf(const skiff::paint::Painter &p, std::size_t from, std::size_t to) const {
+    if (fSpans.empty() || fMasked) {
+      return p.measure(this->shown(from, to), fFontSize);
+    }
+    float width = 0.0f;
+    for (const auto &[a, b, look] : this->runsOf(from, to)) {
+      width += this->painterOf(p, look).measure(this->shown(a, b), fFontSize, look.face);
+    }
+    return width;
+  }
+  // A run's painter: the monospace face where its look asks for it.
+  [[nodiscard]] skiff::paint::Painter painterOf(const skiff::paint::Painter &p, const RunLook &look) const {
+    return look.monospace ? skiff::paint::Painter(p.canvas(), *skiff::paint::defaultFont(), true) : p;
+  }
+  // A run: [from, to) all of one look.
+  struct Run {
+    std::size_t from = 0;
+    std::size_t to = 0;
+    RunLook look;
+  };
+  // The runs between two offsets: cut where a span starts or ends.
+  [[nodiscard]] std::vector<Run> runsOf(std::size_t from, std::size_t to) const {
+    if (to <= from) {
+      return {};
+    }
+    if (fSpans.empty() || fMasked) {
+      return {Run{from, to, {}}};
+    }
+    std::vector<std::size_t> cuts{from, to};
+    for (const Span &one : fSpans) {
+      for (const std::size_t at : {one.first, one.last}) {
+        if (at > from && at < to) {
+          cuts.push_back(at);
+        }
+      }
+    }
+    std::ranges::sort(cuts);
+    cuts.erase(std::ranges::unique(cuts).begin(), cuts.end());
+    return std::ranges::to<std::vector<Run>>(std::views::transform(std::views::pairwise(cuts), [this](const auto &pair) {
+      const auto &[a, b] = pair;
+      return Run{a, b, this->lookOf(a)};
+    }));
+  }
+  // How the character at an offset looks: all its spans' looks.
+  [[nodiscard]] RunLook lookOf(std::size_t at) const {
+    RunLook look;
+    for (const Span &one : fSpans) {
+      if (one.first <= at && at < one.last) {
+        look = joined(look, runLookBy(fBlocks, one.format));
+      }
+    }
+    return look;
+  }
+  // The field as a hook sees it.
+  [[nodiscard]] FieldView<Format> view() const { return {fText, fCaret, fAnchor, fSpans}; }
+  // An offset in the text, as it is in plainText(): atoms before it as long
+  // as they read; one inside an atom at its start.
+  [[nodiscard]] std::size_t plainOffset(std::size_t at) const {
+    std::size_t out = at;
+    for (const Atom &one : fAtoms) {
+      if (one.last <= at) {
+        out = out + one.plain.size() - (one.last - one.first);
+      } else if (one.first < at) {
+        out -= at - one.first;
+      }
+    }
+    return out;
+  }
+  // Spans moved for text put in at `at`: on past it, or longer where it went
+  // into one -- at a span's end too, where the format grows.
+  void spansInserted(std::size_t at, std::size_t size) {
+    for (Span &one : fSpans) {
+      if (one.first >= at) {
+        one.first += size;
+        one.last += size;
+      } else if (one.last > at || (one.last == at && growsBy(fBlocks, one.format))) {
+        one.last += size;
+      }
+    }
+  }
+  // Spans moved for [from, to) taken out: what was in it gone from them, and
+  // a span left empty dropped.
+  void spansErased(std::size_t from, std::size_t to) {
+    const auto moved = [&](std::size_t at) { return at <= from ? at : at >= to ? at - (to - from) : from; };
+    for (Span &one : fSpans) {
+      one.first = moved(one.first);
+      one.last = moved(one.last);
+    }
+    std::erase_if(fSpans, [](const Span &one) { return one.first >= one.last; });
+  }
+  // Spans kept within the text: cut to its end, those left empty dropped.
+  void keepSpansIn() {
+    for (Span &one : fSpans) {
+      one.last = std::min(one.last, fText.size());
+      one.first = std::min(one.first, one.last);
+    }
+    std::erase_if(fSpans, [](const Span &one) { return one.first >= one.last; });
   }
   // Where the text goes: its bounds within its padding at the sides, as a
   // field's plate keeps its text off its edges.
@@ -756,6 +1088,7 @@ private:
   struct Snapshot {
     std::string text;
     std::vector<Atom> atoms;
+    std::vector<Span> spans;
     std::size_t caret = 0, anchor = 0;
   };
   std::vector<Snapshot> fUndo, fRedo;
@@ -765,7 +1098,7 @@ private:
   static constexpr std::size_t kMostSteps = 200;
   void remember(bool runsOn) {
     if (!runsOn) {
-      fUndo.push_back({fText, fAtoms, fCaret, fAnchor});
+      fUndo.push_back({fText, fAtoms, fSpans, fCaret, fAnchor});
       if (fUndo.size() > kMostSteps) {
         fUndo.erase(fUndo.begin());
       }
@@ -779,6 +1112,7 @@ private:
   void restore(Snapshot to) {
     fText = std::move(to.text);
     fAtoms = std::move(to.atoms);
+    fSpans = std::move(to.spans);
     fCaret = std::min(to.caret, fText.size());
     fAnchor = std::min(to.anchor, fText.size());
     this->breakRun();
@@ -788,7 +1122,7 @@ private:
     if (fUndo.empty()) {
       return;
     }
-    fRedo.push_back({fText, fAtoms, fCaret, fAnchor});
+    fRedo.push_back({fText, fAtoms, fSpans, fCaret, fAnchor});
     Snapshot back = std::move(fUndo.back());
     fUndo.pop_back();
     this->restore(std::move(back));
@@ -797,7 +1131,7 @@ private:
     if (fRedo.empty()) {
       return;
     }
-    fUndo.push_back({fText, fAtoms, fCaret, fAnchor});
+    fUndo.push_back({fText, fAtoms, fSpans, fCaret, fAnchor});
     Snapshot forward = std::move(fRedo.back());
     fRedo.pop_back();
     this->restore(std::move(forward));
@@ -859,7 +1193,7 @@ private:
     bool monospace = false;
     const auto fits = [&](std::size_t from, std::size_t to) {
       const skiff::paint::Painter p(nullptr, *font, monospace);
-      return p.measure(this->shown(from, to), fFontSize) <= room;
+      return this->widthOf(p, from, to) <= room;
     };
     std::size_t start = 0;
     while (true) {
@@ -1032,6 +1366,7 @@ private:
 
   std::string fText;
   std::vector<Atom> fAtoms;
+  std::vector<Span> fSpans;
   std::string fPlaceholder;
   [[no_unique_address]] OnSubmit fOnSubmit;
   [[no_unique_address]] Pictures fPictures{};
@@ -1060,8 +1395,9 @@ private:
 // The field over an erased call, AnyPictures and AnyBlocks, taking its own and
 // erasing them: all of its code but this is that field's, made once.
 template <class OnSubmit, class Pictures, class Blocks>
-class ErasedTextArea : public internal::TextArea<AnyCallFor<void(std::string_view), OnSubmit>, skiff::nodes::AnyPictures, AnyBlocks> {
-  using Base = internal::TextArea<AnyCallFor<void(std::string_view), OnSubmit>, skiff::nodes::AnyPictures, AnyBlocks>;
+class ErasedTextArea
+    : public internal::TextArea<AnyCallFor<void(std::string_view), OnSubmit>, skiff::nodes::AnyPictures, AnyBlocksOf<FormatOf<Blocks>>> {
+  using Base = internal::TextArea<AnyCallFor<void(std::string_view), OnSubmit>, skiff::nodes::AnyPictures, AnyBlocksOf<FormatOf<Blocks>>>;
 
 public:
   // Its own handlers, as the wrapper's own: brought in here, so that they
@@ -1084,7 +1420,7 @@ public:
 private:
   void erase() {
     this->setPictures(skiff::nodes::AnyPictures::of<Pictures>());
-    this->setBlocks(AnyBlocks::of<Blocks>());
+    this->setBlocks(AnyBlocksOf<FormatOf<Blocks>>::template of<Blocks>());
   }
 };
 // The field: made for its own in a release build, over the erased ones
