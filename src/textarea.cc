@@ -152,6 +152,18 @@ struct FieldChange {
   std::size_t caret = 0;
   std::size_t anchor = 0;
 };
+// What a field of a format last copied or cut, and its spans by offsets in
+// it: one for all the fields of that format, as the clipboard is one.
+template <class Format>
+struct CopiedSpans {
+  std::string text;
+  std::vector<TextSpan<Format>> spans;
+};
+template <class Format>
+[[nodiscard]] std::optional<CopiedSpans<Format>> &copiedSpans() {
+  static std::optional<CopiedSpans<Format>> copied;
+  return copied;
+}
 // Whether a format is one: a field of NoFormat keeps none.
 template <class Format>
 inline constexpr bool kFormatsIn = true;
@@ -659,6 +671,10 @@ public:
         return;
       }
       skiff::scene::setClipboardText(this->selected());
+      // Its spans kept beside it, by offsets in it: pasted back as it was,
+      // where what is pasted is still that text -- as tdesktop keeps its
+      // tags beside the text on the clipboard.
+      Copied() = CopiedSpans<Format>{this->selected(), this->spansIn(this->low(), this->high())};
       if (press.key == keys::kX) {
         this->erase(this->low(), this->high());
       }
@@ -667,7 +683,22 @@ public:
       if (fSingle) {
         std::ranges::replace(pasted, '\n', ' ');
       }
+      const std::size_t at = this->hasSelection() ? this->low() : fCaret;
+      // What this field copied, with its spans -- unless Shift asks for it
+      // plain (Ctrl+Shift+V).
+      const bool formatted = !shift && !fSingle && !fMasked && Copied() && Copied()->text == pasted;
       this->insert(pasted);
+      if (formatted) {
+        std::ranges::move(std::views::transform(Copied()->spans,
+                                                [at](Span one) {
+                                                  one.first += at;
+                                                  one.last += at;
+                                                  return one;
+                                                }),
+                          std::back_inserter(fSpans));
+        this->keepSpansIn();
+        this->markDamaged();
+      }
     } else if (press.key == keys::kBackspace) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
@@ -985,6 +1016,15 @@ private:
   [[nodiscard]] skiff::paint::Painter painterOf(const skiff::paint::Painter &p, const RunLook &look) const {
     return look.monospace ? skiff::paint::Painter(p.canvas(), *skiff::paint::defaultFont(), true) : p;
   }
+  // The spans over [from, to), cut to it, by offsets from `from`.
+  [[nodiscard]] std::vector<Span> spansIn(std::size_t from, std::size_t to) const {
+    return std::ranges::to<std::vector<Span>>(std::views::transform(
+        std::views::filter(fSpans, [&](const Span &one) { return one.first < to && one.last > from; }),
+        [&](const Span &one) {
+          return Span{std::max(one.first, from) - from, std::min(one.last, to) - from, one.format};
+        }));
+  }
+  [[nodiscard]] static std::optional<CopiedSpans<Format>> &Copied() { return copiedSpans<Format>(); }
   // A run: [from, to) all of one look.
   struct Run {
     std::size_t from = 0;
