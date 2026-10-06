@@ -24,7 +24,7 @@ struct cubic {
 };
 struct close {};
 } // namespace pattern_step
-using PatternStep = splice::variant<pattern_step::move, pattern_step::line, pattern_step::cubic, pattern_step::close>;
+using PatternStep = spl::variant<pattern_step::move, pattern_step::line, pattern_step::cubic, pattern_step::close>;
 struct Pattern {
   float width = 0.0f;
   float height = 0.0f;
@@ -612,7 +612,7 @@ private:
     into.scale(cover, cover);
     skia::SkPathBuilder shapes;
     for (const PatternStep &step : fPattern->steps) {
-      splice::visit(splice::overloaded{[&](const pattern_step::move &one) { shapes.moveTo(one.x, one.y); },
+      spl::visit(spl::overloaded{[&](const pattern_step::move &one) { shapes.moveTo(one.x, one.y); },
                                        [&](const pattern_step::line &one) { shapes.lineTo(one.x, one.y); },
                                        [&](const pattern_step::cubic &one) {
                                          shapes.cubicTo(one.x1, one.y1, one.x2, one.y2, one.x, one.y);

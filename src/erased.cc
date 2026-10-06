@@ -18,7 +18,7 @@ export namespace skiff::widgets {
 // Whether widgets hold their actions erased: as the walks are.
 inline constexpr bool kErasedActions = skiff::scene::kErasedWalks;
 
-// A call, whatever it is: made as it would be -- splice::erased_call, held
+// A call, whatever it is: made as it would be -- spl::erased_call, held
 // in a buffer of its own, never on the heap. Erasure, outside a release
 // build only. NoAction is held as nothing, so that it still does not act.
 // The least an erased call holds: a few pointers and a string -- what a
@@ -28,8 +28,8 @@ inline constexpr std::size_t kActionBytes = 8 * sizeof(void *);
 template <class Signature, std::size_t Bytes = kActionBytes>
 class AnyCall;
 template <class Result, class... Args, std::size_t Bytes>
-class AnyCall<Result(Args...), Bytes> : public splice::erased_call<Result(Args...), Bytes> {
-  using Base = splice::erased_call<Result(Args...), Bytes>;
+class AnyCall<Result(Args...), Bytes> : public spl::erased_call<Result(Args...), Bytes> {
+  using Base = spl::erased_call<Result(Args...), Bytes>;
 
 public:
   AnyCall() = default;
@@ -46,7 +46,7 @@ using AnyAction = AnyCall<void()>;
 // put on the heap, and a widget is made once for each of a few sizes, not
 // once for each call.
 template <class Call>
-inline constexpr std::size_t kBytesOf = std::bit_ceil(std::max(kActionBytes, sizeof(splice::holder<Call>)));
+inline constexpr std::size_t kBytesOf = std::bit_ceil(std::max(kActionBytes, sizeof(spl::holder<Call>)));
 template <class Signature, class Call>
 using AnyCallFor = AnyCall<Signature, kBytesOf<Call>>;
 template <class Action>

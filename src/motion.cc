@@ -134,8 +134,8 @@ private:
     skiff::scene::layout(panel, area);
   }
   template <class... Ts>
-  static void layOut(splice::variant<Ts...> &panel, const skia::SkRect &area) {
-    splice::visit([&](auto &one) { layOut(one, area); }, panel);
+  static void layOut(spl::variant<Ts...> &panel, const skia::SkRect &area) {
+    spl::visit([&](auto &one) { layOut(one, area); }, panel);
   }
   // A program's own variant, visited as C++26's is.
   template <class V>
@@ -439,7 +439,7 @@ struct near_top {
   friend bool operator==(near_top, near_top) = default;
 };
 } // namespace dialog_place
-using DialogPlace = splice::variant<dialog_place::centred, dialog_place::near_top>;
+using DialogPlace = spl::variant<dialog_place::centred, dialog_place::near_top>;
 
 // A box in the middle of the window over a dimmed background, as a settings
 // or confirmation dialog: it fades in, and a press off it or Esc from inside
@@ -547,8 +547,8 @@ public:
     skiff::scene::layout(fScrim, box);
     const float width = std::min(fWidth, box.width() * 0.92f);
     // Its top, where it has one of its own; else it is centred.
-    const std::optional<float> top = splice::visit(
-        splice::overloaded{
+    const std::optional<float> top = spl::visit(
+        spl::overloaded{
             [](dialog_place::centred) -> std::optional<float> { return std::nullopt; },
             [&](dialog_place::near_top near) -> std::optional<float> {
               return std::clamp(box.height() / 24.0f, near.minimal, near.maximal);
