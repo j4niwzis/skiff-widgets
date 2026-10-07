@@ -329,33 +329,34 @@ public:
 
   [[nodiscard]] bool settling() const { return fSlide.moving(); }
   [[nodiscard]] bool wantsTick() const { return this->settling(); }
+  // A step of the slide moves the panel, drawn shifted -- not laid out
+  // again at each step where it is: all of what it holds was measured anew
+  // at every frame of the slide.
   void update(double nowMs) {
     if (fSlide.step(nowMs)) {
       this->showWhatMoves();
-      this->invalidateLayout();
+      this->place();
     }
   }
 
+  // The panel laid out where it is all the way out, hidden or not: laid out
+  // ahead, while nothing moves, its first frame out is drawn rather than
+  // made -- a phone's stood still half out while it was.
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
     fBase.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fBase, box);
-    if (!fContent.visible()) {
-      return;
-    }
-    const float value = fSlide.value();
-    fScrim.setColour(skia::colorSetARGB(static_cast<unsigned>(115.0f * value), 0, 0, 0));
     fScrim.apply({.width = box.width(), .height = box.height()});
     fScrim.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fScrim, box);
-    const float width = std::min(fWidth, box.width() * 0.85f);
-    const skia::SkRect panel = skia::SkRect::MakeXYWH(
-        box.fLeft - width * (1.0f - value), box.fTop, width, box.height());
-    fSheet.apply({.width = width, .height = box.height()});
+    fPanelWidth = std::min(fWidth, box.width() * 0.85f);
+    const skia::SkRect panel = skia::SkRect::MakeXYWH(box.fLeft, box.fTop, fPanelWidth, box.height());
+    fSheet.apply({.width = fPanelWidth, .height = box.height()});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, panel);
     fContent.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fContent, panel);
+    this->place();
   }
 
   // A press on the scrim pushes the panel back.
@@ -407,6 +408,17 @@ private:
     Scrim() : skiff::nodes::Box<>(skia::colorSetARGB(0, 0, 0, 0)) {}
     [[nodiscard]] bool acceptsInput() const { return true; }
   };
+
+  // Where the slide has the panel, and how dark the scrim is for it.
+  void place() {
+    const float value = fSlide.value();
+    fScrim.setColour(skia::colorSetARGB(static_cast<unsigned>(115.0f * value), 0, 0, 0));
+    const float shift = -fPanelWidth * (1.0f - value);
+    fSheet.apply({.shiftX = shift});
+    fContent.apply({.shiftX = shift});
+    this->markDamaged();
+  }
+  float fPanelWidth = 0.0f;
 
   // Shown while the panel is out or moving; hidden once it is all the way
   // in.
