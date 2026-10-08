@@ -231,11 +231,6 @@ public:
   // And what letting go of it calls: where a model's slider keeps where it
   // was let go.
   OnDone &onDone() noexcept { return fOnDone; }
-  auto takeEvents()
-    requires requires(OnSet &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnSet.fEmitted, {});
-  }
 
 private:
   float fFraction = 0.0f;
@@ -265,7 +260,7 @@ public:
 };
 // The bar: made for its calls in a release build, over erased ones otherwise.
 template <class OnSet = skiff::scene::NoAction, class OnDone = skiff::scene::NoAction>
-using SliderBar = std::conditional_t<kErasedActions && !KeepsEvents<OnSet, OnDone>, ErasedSliderBar<OnSet, OnDone>, internal::SliderBar<OnSet, OnDone>>;
+using SliderBar = std::conditional_t<kErasedActions && !AnswersPresses<OnSet, OnDone>, ErasedSliderBar<OnSet, OnDone>, internal::SliderBar<OnSet, OnDone>>;
 
 // A track with two independently draggable ends. Values stay normalised so
 // the widget can represent difficulty, price, time or any other range without
@@ -585,11 +580,6 @@ private:
 public:
   // What pressing it calls, as held: where a model's toggle keeps its presses.
   OnToggle &onToggle() noexcept { return fOnToggle; }
-  auto takeEvents()
-    requires requires(OnToggle &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnToggle.fEmitted, {});
-  }
 
 private:
   bool fOn = false;
@@ -619,6 +609,6 @@ public:
 // The switch: made for its action in a release build, over an erased one
 // otherwise.
 template <class OnToggle = skiff::scene::NoAction>
-using Toggle = std::conditional_t<kErasedActions && !KeepsEvents<OnToggle>, ErasedToggle<OnToggle>, internal::Toggle<OnToggle>>;
+using Toggle = std::conditional_t<kErasedActions && !AnswersPresses<OnToggle>, ErasedToggle<OnToggle>, internal::Toggle<OnToggle>>;
 
 } // namespace skiff::widgets

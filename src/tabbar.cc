@@ -305,13 +305,6 @@ private:
   [[no_unique_address]] OnSelect fOnSelect;
 
 public:
-  // Where its action keeps the events it sent: taken by a walk that drains
-  // them.
-  auto takeEvents()
-    requires requires(OnSelect &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnSelect.fEmitted, {});
-  }
 
 private:
 
@@ -357,7 +350,7 @@ public:
 // otherwise.
 template <class OnSelect = skiff::scene::NoAction, class IsActive = skiff::scene::NoAction,
           class Decorate = skiff::scene::NoAction>
-using TabBar = std::conditional_t<kErasedActions && !KeepsEvents<OnSelect, IsActive, Decorate>, ErasedTabBar<OnSelect, IsActive, Decorate>,
+using TabBar = std::conditional_t<kErasedActions && !AnswersPresses<OnSelect, IsActive, Decorate>, ErasedTabBar<OnSelect, IsActive, Decorate>,
                                   internal::TabBar<OnSelect, IsActive, Decorate>>;
 
 

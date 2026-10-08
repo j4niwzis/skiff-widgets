@@ -150,13 +150,6 @@ public:
 
   // The action it calls, for what holds the button to read it back.
   Action &action() noexcept { return fAction; }
-  // Where its action keeps the events it sent (fEmitted): taken by a walk
-  // that drains them, as a model's widget's.
-  auto takeEvents()
-    requires requires(Action &a) { a.fEmitted; }
-  {
-    return std::exchange(fAction.fEmitted, {});
-  }
 
 private:
   bool fPrimary = false; // filled in the accent rather than the surface
@@ -192,6 +185,6 @@ public:
 // The button: made for its action in a release build, over AnyAction
 // otherwise.
 template <class Action = skiff::scene::NoAction>
-using Button = std::conditional_t<kErasedActions && !KeepsEvents<Action>, ErasedButton<Action>, internal::Button<Action>>;
+using Button = std::conditional_t<kErasedActions && !AnswersPresses<Action>, ErasedButton<Action>, internal::Button<Action>>;
 
 } // namespace skiff::widgets

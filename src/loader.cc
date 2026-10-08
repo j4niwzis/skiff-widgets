@@ -105,13 +105,6 @@ private:
   [[no_unique_address]] OnPress fOnPress;
 
 public:
-  // Where its action keeps the events it sent: taken by a walk that drains
-  // them.
-  auto takeEvents()
-    requires requires(OnPress &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnPress.fEmitted, {});
-  }
 
 private:
 };
@@ -137,7 +130,7 @@ public:
 // The loader: made for its action in a release build, over AnyAction
 // otherwise.
 template <class OnPress = skiff::scene::NoAction>
-using RadialLoader = std::conditional_t<kErasedActions && !KeepsEvents<OnPress>, ErasedRadialLoader<OnPress>, internal::RadialLoader<OnPress>>;
+using RadialLoader = std::conditional_t<kErasedActions && !AnswersPresses<OnPress>, ErasedRadialLoader<OnPress>, internal::RadialLoader<OnPress>>;
 
 
 } // namespace skiff::widgets

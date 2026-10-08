@@ -1436,13 +1436,6 @@ private:
   [[no_unique_address]] OnSubmit fOnSubmit;
 
 public:
-  // Where its action keeps the events it sent: taken by a walk that drains
-  // them.
-  auto takeEvents()
-    requires requires(OnSubmit &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnSubmit.fEmitted, {});
-  }
 
 private:
 
@@ -1508,7 +1501,7 @@ private:
 // The field: made for its own in a release build, over the erased ones
 // otherwise.
 template <class OnSubmit = skiff::scene::NoAction, class Pictures = skiff::nodes::NoPictures, class Blocks = NoBlocks>
-using TextArea = std::conditional_t<kErasedActions && !KeepsEvents<OnSubmit, Pictures, Blocks>, ErasedTextArea<OnSubmit, Pictures, Blocks>,
+using TextArea = std::conditional_t<kErasedActions && !AnswersPresses<OnSubmit, Pictures, Blocks>, ErasedTextArea<OnSubmit, Pictures, Blocks>,
                                     internal::TextArea<OnSubmit, Pictures, Blocks>>;
 
 

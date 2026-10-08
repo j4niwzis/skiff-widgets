@@ -398,13 +398,6 @@ private:
   [[no_unique_address]] OnChanged fOnChanged;
 
 public:
-  // Where its action keeps the events it sent: taken by a walk that drains
-  // them.
-  auto takeEvents()
-    requires requires(OnChanged &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnChanged.fEmitted, {});
-  }
 
 private:
   std::string fText;
@@ -440,7 +433,7 @@ public:
 // The box: made for its call in a release build, over an erased one
 // otherwise.
 template <class OnChanged = skiff::scene::NoAction>
-using TextBox = std::conditional_t<kErasedActions && !KeepsEvents<OnChanged>, ErasedTextBox<OnChanged>, internal::TextBox<OnChanged>>;
+using TextBox = std::conditional_t<kErasedActions && !AnswersPresses<OnChanged>, ErasedTextBox<OnChanged>, internal::TextBox<OnChanged>>;
 
 
 } // namespace skiff::widgets

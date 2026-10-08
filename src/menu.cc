@@ -342,13 +342,6 @@ private:
   [[no_unique_address]] OnChoose fOnChoose;
 
 public:
-  // Where its action keeps the events it sent: taken by a walk that drains
-  // them.
-  auto takeEvents()
-    requires requires(OnChoose &a) { a.fEmitted; }
-  {
-    return std::exchange(fOnChoose.fEmitted, {});
-  }
 
 private:
   DropdownLook fLook;
@@ -380,7 +373,7 @@ public:
 // The menu bar: made for its action in a release build, over an erased call
 // otherwise.
 template <class OnChoose = skiff::scene::NoAction>
-using MenuBar = std::conditional_t<kErasedActions && !KeepsEvents<OnChoose>, ErasedMenuBar<OnChoose>, internal::MenuBar<OnChoose>>;
+using MenuBar = std::conditional_t<kErasedActions && !AnswersPresses<OnChoose>, ErasedMenuBar<OnChoose>, internal::MenuBar<OnChoose>>;
 
 
 } // namespace skiff::widgets
