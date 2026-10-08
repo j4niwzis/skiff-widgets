@@ -126,7 +126,7 @@ public:
       this->takeAll();
       fText.insert(fCaret, typed.text);
       fCaret += typed.text.size();
-      std::invoke(fOnChanged, std::string_view(fText));
+      this->changed();
     }
     fComposition.clear();
     this->markDamaged();
@@ -159,7 +159,7 @@ public:
       this->takeAll();
       fText.insert(fCaret, pasted);
       fCaret += pasted.size();
-      std::invoke(fOnChanged, std::string_view(fText));
+      this->changed();
       this->markDamaged();
       reply.handle();
       return;
@@ -177,7 +177,7 @@ public:
       skiff::scene::setClipboardText(fText);
       if (press.key == keys::kX) {
         this->takeAll();
-        std::invoke(fOnChanged, std::string_view(fText));
+        this->changed();
       }
       this->markDamaged();
       reply.handle();
@@ -187,7 +187,7 @@ public:
     // selection go.
     if (fAll && (press.key == keys::kBackspace || press.key == keys::kDelete)) {
       this->takeAll();
-      std::invoke(fOnChanged, std::string_view(fText));
+      this->changed();
       this->markDamaged();
       reply.handle();
       return;
@@ -201,7 +201,7 @@ public:
         const std::size_t eraseFrom = previousCodepoint(fText, fCaret);
         fText.erase(eraseFrom, fCaret - eraseFrom);
         fCaret = eraseFrom;
-        std::invoke(fOnChanged, std::string_view(fText));
+        this->changed();
         this->markDamaged();
       }
       reply.handle();
@@ -209,7 +209,7 @@ public:
       if (fCaret < fText.size()) {
         const std::size_t eraseTo = nextCodepoint(fText, fCaret);
         fText.erase(fCaret, eraseTo - fCaret);
-        std::invoke(fOnChanged, std::string_view(fText));
+        this->changed();
         this->markDamaged();
       }
       reply.handle();
@@ -254,7 +254,7 @@ public:
                   skiff::scene::Reply &reply) {
     if (set.text != fText) {
       this->setText(std::string(set.text));
-      std::invoke(fOnChanged, std::string_view(fText));
+      this->changed();
     }
     reply.handle();
   }
@@ -378,6 +378,23 @@ private:
     return from;
   }
 
+  // What it was changed to, told: where the action answers, as the press
+  // is delivered (onPress); else at once.
+  void changed()
+    requires skiff::scene::Answering<OnChanged>
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void changed() { std::invoke(fOnChanged, std::string_view(fText)); }
+
+public:
+  auto onPress()
+    requires skiff::scene::Answering<OnChanged>
+  {
+    return std::invoke(fOnChanged, std::string_view(fText));
+  }
+
+private:
   [[no_unique_address]] OnChanged fOnChanged;
 
 public:

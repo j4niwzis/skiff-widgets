@@ -1,5 +1,6 @@
 import std;
 import gtest;
+import skia;
 import skiff.scene;
 import skiff.model;
 import skiff.bind;
@@ -154,9 +155,16 @@ TEST(WidgetsModel, APressIsAnEventItsScopeTakes) {
   bind::Binding<Model> binding;
   binding.refresh(p, m);
   auto &button = std::get<1>(p.fParts);
-  button.action()();  // as a press calls it
-  button.action()();
-  binding.drain(p, m);
+  // Pressed: it says so, and keeps nothing.
+  button.fState.fBounds = skia::SkRect::MakeWH(80, 30);
+  ASSERT_TRUE(button.onClick(10, 10));
+  ASSERT_EQ(scene::hostWork().pressed.size(), 1u);
+  EXPECT_EQ(scene::hostWork().pressed.back(), &button.fState);
+  scene::hostWork().pressed.clear();
+  // Delivered along its path -- the page.s second part -- twice: its
+  // scope takes the event each time.
+  EXPECT_TRUE(bind::press(p, m, scene::Path{1}));
+  EXPECT_TRUE(bind::press(p, m, scene::Path{1}));
   EXPECT_EQ(m.look<Count>()->value, 2);
 }
 

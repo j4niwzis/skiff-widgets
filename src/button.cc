@@ -100,9 +100,26 @@ public:
     if (!fEnabled || !fState.fBounds.contains(x, y)) {
       return false;
     }
-    std::invoke(fAction);
+    this->act();
     return true;
   }
+  // What a press asks for, where its action answers: asked as the press is
+  // delivered.
+  auto onPress()
+    requires skiff::scene::Answering<Action>
+  {
+    return std::invoke(fAction);
+  }
+
+private:
+  void act()
+    requires skiff::scene::Answering<Action>
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void act() { std::invoke(fAction); }
+
+public:
 
   void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();

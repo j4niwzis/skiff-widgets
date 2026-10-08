@@ -17,10 +17,11 @@ export namespace skiff::widgets {
 
 // Whether widgets hold their actions erased: as the walks are.
 inline constexpr bool kErasedActions = skiff::scene::kErasedWalks;
-// An action that keeps the events it sent (fEmitted), for a walk to take:
-// never erased, so that the walk can reach them.
+// An action that keeps the events it sent (fEmitted), for a walk to take,
+// or one that answers a press with them (scene::Answering): never erased,
+// so that what it sends keeps its type.
 template <class... Actions>
-concept KeepsEvents = (requires(Actions &a) { a.fEmitted; } || ...);
+concept KeepsEvents = (requires(Actions &a) { a.fEmitted; } || ...) || (skiff::scene::Answering<Actions> || ...);
 
 // A call, whatever it is: made as it would be -- spl::erased_call, held
 // in a buffer of its own, never on the heap. Erasure, outside a release

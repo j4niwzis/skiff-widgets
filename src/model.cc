@@ -230,26 +230,22 @@ public:
 };
 
 // The events a button sent, kept until they are taken.
+// A button's press answered with a copy of its event: nothing kept.
 template <class E> struct Sent {
+  using Answer = E;
   E fEvent;
-  std::vector<E> fItems;
-  void operator()() {
-    fItems.push_back(fEvent);
-    ++skiff::bind::pendingCount();
-  }
+  E operator()() const { return fEvent; }
 };
 
 // A button sending a copy of its event each time it is pressed, up through
-// the scopes it is in.
+// the scopes it is in: as the press is delivered (skiff::bind::press).
 template <class E> class SendButton : public internal::Button<Sent<E>> {
 public:
   using Out = skiff::model::Types<E>;
   SendButton(std::string label, E event)
-      : internal::Button<Sent<E>>(std::move(label), Sent<E>{std::move(event), {}}) {}
+      : internal::Button<Sent<E>>(std::move(label), Sent<E>{std::move(event)}) {}
   SendButton(Theme theme, std::string label, E event)
-      : internal::Button<Sent<E>>(std::move(theme), std::move(label),
-                                  Sent<E>{std::move(event), {}}) {}
-  std::vector<E> takeEvents() { return std::exchange(this->action().fItems, {}); }
+      : internal::Button<Sent<E>>(std::move(theme), std::move(label), Sent<E>{std::move(event)}) {}
 };
 
 } // namespace skiff::widgets

@@ -518,9 +518,26 @@ public:
     if (!skiff::scene::acts(fOnToggle)) {
       return false;
     }
-    std::invoke(fOnToggle);
+    this->act();
     return true;
   }
+  // What a press asks for, where its action answers: asked as the press is
+  // delivered.
+  auto onPress()
+    requires skiff::scene::Answering<OnToggle>
+  {
+    return std::invoke(fOnToggle);
+  }
+
+private:
+  void act()
+    requires skiff::scene::Answering<OnToggle>
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void act() { std::invoke(fOnToggle); }
+
+public:
 
 private:
   [[nodiscard]] static skia::SkColor mix(skia::SkColor a, skia::SkColor b,
