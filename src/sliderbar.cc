@@ -536,6 +536,11 @@ private:
 public:
   // What pressing it calls, as held: where a model's toggle keeps its presses.
   OnToggle &onToggle() noexcept { return fOnToggle; }
+  auto takeEvents()
+    requires requires(OnToggle &a) { a.fEmitted; }
+  {
+    return std::exchange(fOnToggle.fEmitted, {});
+  }
 
 private:
   bool fOn = false;
