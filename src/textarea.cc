@@ -1417,6 +1417,12 @@ private:
   std::vector<Span> fSpans;
   std::string fPlaceholder;
   [[no_unique_address]] OnSubmit fOnSubmit;
+
+public:
+  // What submitting it calls, as held: where a model's area keeps what was sent.
+  OnSubmit &onSubmit() noexcept { return fOnSubmit; }
+
+private:
   [[no_unique_address]] Pictures fPictures{};
   [[no_unique_address]] Blocks fBlocks{};
   Theme fTheme;

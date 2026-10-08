@@ -101,6 +101,49 @@ TEST(WidgetsModel, PlainFieldsAreBoundByTheirMemberPointers) {
   EXPECT_EQ(look.selected(), 1);
 }
 
+// A list's pick sets its part; a text area's text, submitted, is an event
+// its scope takes, and the area is emptied.
+struct Said {
+  std::string text;
+};
+struct Chat {
+  Look look = Look::kSolid;
+  std::vector<std::string> said;
+};
+struct ChatRoot {
+  model::Tracked<Chat> chat;
+};
+using ChatModel = model::Model<ChatRoot, Reactions>;
+auto chatPage() {
+  return scoped<ChatRoot>(
+      handlers(handle<Said>([](const Said &one, const auto &) {
+        return model::over<model::Field<&Chat::said>>([text = one.text](std::vector<std::string> all) {
+          all.push_back(text);
+          return all;
+        });
+      })),
+      column(vbox(4),
+             bound<model::Field<&Chat::look>>(widgets::ChoiceList<Look>({{"Solid", Look::kSolid}, {"Frosted", Look::kFrosted}})),
+             widgets::SubmitArea<Said>("Message")));
+}
+TEST(WidgetsModel, AListSetsItsPartAndAnAreaSendsItsText) {
+  ChatModel m;
+  auto p = chatPage();
+  bind::Binding<ChatModel> binding;
+  binding.refresh(p, m);
+  auto &list = std::get<0>(p.fParts);
+  auto &area = std::get<1>(p.fParts);
+  EXPECT_EQ(list.current(), 0);
+  list.onChoose()(1);
+  area.setText("hi");
+  area.onSubmit()("hi");  // as Enter calls it
+  binding.drain(p, m);
+  EXPECT_EQ(m.root().chat.fValue.look, Look::kFrosted);
+  ASSERT_EQ(m.root().chat.fValue.said.size(), 1u);
+  EXPECT_EQ(m.root().chat.fValue.said[0], "hi");
+  EXPECT_EQ(area.text(), "");
+}
+
 TEST(WidgetsModel, APressIsAnEventItsScopeTakes) {
   Model m;
   auto p = page();

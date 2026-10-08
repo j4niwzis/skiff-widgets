@@ -439,6 +439,12 @@ private:
   }
 
   [[no_unique_address]] OnChoose fOnChoose;
+
+public:
+  // What choosing a row calls, as held: where a model's list keeps the pick.
+  OnChoose &onChoose() noexcept { return fOnChoose; }
+
+private:
   DropdownLook fLook;
   int fCurrent = -1;
 };

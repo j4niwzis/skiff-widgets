@@ -8,6 +8,8 @@ export import skiff.widgets.button;
 export import skiff.widgets.textbox;
 export import skiff.widgets.sliderbar;
 export import skiff.widgets.tabbar;
+export import skiff.widgets.textarea;
+export import skiff.widgets.dropdown;
 
 // skiff's widgets, bound to a skiff.model: a text field showing a part and
 // setting it as it is typed into; a button sending an event when pressed.
@@ -164,6 +166,58 @@ public:
 
 private:
   std::vector<Choice> fChoices;
+};
+
+// A dropdown's rows, one for each value a part can be, showing the one it
+// is and setting it to the one chosen.
+template <class T> class ChoiceList : public internal::DropdownList<Picked> {
+public:
+  using Choice = std::pair<std::string, T>;
+  explicit ChoiceList(std::vector<Choice> choices)
+      : internal::DropdownList<Picked>(Picked{}), fChoices(std::move(choices)) {
+    this->setOptions(std::ranges::to<std::vector>(std::views::transform(fChoices, &Choice::first)));
+  }
+
+  void read(const T &now) {
+    const auto found = std::ranges::find(fChoices, now, &Choice::second);
+    this->setCurrent(found == fChoices.end() ? -1 : static_cast<int>(found - fChoices.begin()));
+  }
+  std::vector<skiff::model::SetTo<T>> takeChanges() {
+    std::vector<skiff::model::SetTo<T>> out;
+    if (const auto index = std::exchange(this->onChoose().fIndex, std::nullopt);
+        index && *index >= 0 && static_cast<std::size_t>(*index) < fChoices.size())
+      out.push_back(skiff::model::setTo(fChoices[static_cast<std::size_t>(*index)].second));
+    return out;
+  }
+
+private:
+  std::vector<Choice> fChoices;
+};
+
+// What a text area sent, kept until it is taken.
+template <class E> struct Submitted {
+  std::vector<E> fItems;
+  void operator()(std::string_view text) {
+    fItems.push_back(E{std::string(text)});
+    ++skiff::bind::pendingCount();
+  }
+};
+
+// A text area sending an E made of its text each time it is submitted --
+// a message from a composer -- and emptied for the next.
+template <class E> class SubmitArea : public internal::TextArea<Submitted<E>> {
+public:
+  using Out = skiff::model::Types<E>;
+  explicit SubmitArea(std::string placeholder = {})
+      : internal::TextArea<Submitted<E>>(std::move(placeholder), Submitted<E>{}) {}
+  SubmitArea(Theme theme, std::string placeholder)
+      : internal::TextArea<Submitted<E>>(std::move(theme), std::move(placeholder), Submitted<E>{}) {}
+  std::vector<E> takeEvents() {
+    auto sent = std::exchange(this->onSubmit().fItems, {});
+    if (!sent.empty())
+      this->setText({});
+    return sent;
+  }
 };
 
 // The events a button sent, kept until they are taken.
