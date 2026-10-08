@@ -60,6 +60,7 @@ struct Settings {
   int lines = 3;
   Look look = Look::kSolid;
   std::string name;
+  std::optional<bool> push;
 };
 struct SettingsRoot {
   model::Tracked<Settings> settings;
@@ -72,14 +73,15 @@ auto settingsPage() {
                 bound<model::Field<&Settings::lines>>(widgets::SliderField<int>(1, 11)),
                 bound<model::Field<&Settings::look>>(widgets::ChoiceTabs<Look>(
                     {{"Solid", Look::kSolid}, {"Frosted", Look::kFrosted}})),
-                bound<model::Field<&Settings::name>>(widgets::TextField<std::string>("Name")));
+                bound<model::Field<&Settings::name>>(widgets::TextField<std::string>("Name")),
+                bound<model::Field<&Settings::push>>(widgets::ToggleField<std::optional<bool>>()));
 }
 TEST(WidgetsModel, PlainFieldsAreBoundByTheirMemberPointers) {
   SettingsModel m;
   auto p = settingsPage();
   bind::Binding<SettingsModel> binding;
   binding.refresh(p, m);
-  auto &[sound, popups, volume, lines, look, name] = p.fParts;
+  auto &[sound, popups, volume, lines, look, name, push] = p.fParts;
   EXPECT_FALSE(sound.on());
   EXPECT_TRUE(popups.on());
   sound.onToggle()();  // as a press calls it
@@ -87,6 +89,7 @@ TEST(WidgetsModel, PlainFieldsAreBoundByTheirMemberPointers) {
   lines.onSet()(0.5f);
   look.onSelect()(1);
   name.onChanged()("Ann");
+  push.onToggle()();  // unsaid, so off: on
   binding.drain(p, m);
   const Settings &now = m.root().settings.fValue;
   EXPECT_TRUE(now.sound);
@@ -95,6 +98,7 @@ TEST(WidgetsModel, PlainFieldsAreBoundByTheirMemberPointers) {
   EXPECT_EQ(now.lines, 6);
   EXPECT_EQ(now.look, Look::kFrosted);
   EXPECT_EQ(now.name, "Ann");
+  EXPECT_EQ(now.push, std::optional<bool>(true));
   m.apply(model::edit(model::placeOf<model::Field<&Settings::popups>, SettingsRoot>(), model::flip));
   binding.refresh(p, m);
   EXPECT_FALSE(popups.on());

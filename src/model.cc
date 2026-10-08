@@ -67,27 +67,36 @@ struct Pressed {
 };
 
 // A toggle showing a bool part -- a plain field, Field<&Settings::sound> --
-// and flipping it when pressed: twice, and it is as it was.
-class ToggleField : public internal::Toggle<Pressed> {
+// or an optional one (unsaid is off), and setting it to the other when
+// pressed: twice, and it is as it was.
+template <class T = bool> class ToggleField : public internal::Toggle<Pressed> {
 public:
   ToggleField() : internal::Toggle<Pressed>(Pressed{}) {}
   explicit ToggleField(Theme theme) : internal::Toggle<Pressed>(std::move(theme), Pressed{}) {}
 
-  void read(bool now) {
+  void read(const T &now) {
+    fNow = onOf(now);
     // The state it opens in shown there and then; a change after, slid to.
     if (std::exchange(fShown, true))
-      this->setOn(now);
+      this->setOn(fNow);
     else
-      this->setOnNow(now);
+      this->setOnNow(fNow);
   }
-  std::vector<skiff::model::Flip> takeChanges() {
-    const int pressed = std::exchange(this->onToggle().fCount, 0);
-    return std::vector<skiff::model::Flip>(static_cast<std::size_t>(pressed % 2), skiff::model::flip);
+  std::vector<skiff::model::SetTo<T>> takeChanges() {
+    std::vector<skiff::model::SetTo<T>> out;
+    if (std::exchange(this->onToggle().fCount, 0) % 2 == 1)
+      out.push_back(skiff::model::setTo(T(!fNow)));
+    return out;
   }
 
 private:
+  static bool onOf(bool now) { return now; }
+  static bool onOf(const std::optional<bool> &now) { return now.value_or(false); }
+  bool fNow = false;
   bool fShown = false;
 };
+ToggleField() -> ToggleField<bool>;
+explicit ToggleField(Theme) -> ToggleField<bool>;
 
 // Where a slider was dragged to, kept until it is taken.
 struct Slid {
