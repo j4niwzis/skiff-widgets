@@ -131,7 +131,7 @@ public:
     }
     const skiff::paint::Painter p(nullptr, *font);
     const float width =
-        hasX(fState.fRelativeSizeAxes) ? parent.width() * fState.fWidth : fState.fWidth;
+        fState.fRelativeSizeAxes.template has<skiff::scene::axis::x>() ? parent.width() * fState.fWidth : fState.fWidth;
     float x = fHeaderWidth;
     float y = 0.0f;
     fRects.clear();
