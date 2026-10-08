@@ -43,8 +43,9 @@ TEST(WidgetsModel, TypingSetsThePartAndTheFieldShowsIt) {
   bind::Binding<Model> binding;
   binding.refresh(p, m);
   auto &field = std::get<0>(p.fParts);
-  field.onChanged()("bo");  // as typing calls it
-  binding.drain(p, m);
+  // Typed into, and the press delivered: its part set there and then.
+  field.setText("bo");
+  EXPECT_TRUE(bind::press(p, m, scene::Path{0}));
   EXPECT_EQ(m.look<Query>()->value, "bo");
   m.apply(model::over<Query>(model::setTo(Query{"bob"})));
   binding.refresh(p, m);
@@ -85,13 +86,20 @@ TEST(WidgetsModel, PlainFieldsAreBoundByTheirMemberPointers) {
   auto &[sound, popups, volume, lines, look, name, push] = p.fParts;
   EXPECT_FALSE(sound.on());
   EXPECT_TRUE(popups.on());
-  sound.onToggle()();  // as a press calls it
-  volume.onSet()(0.25f);
-  lines.onSet()(0.5f);
-  look.onSelect()(1);
-  name.onChanged()("Ann");
-  push.onToggle()();  // unsaid, so off: on
-  binding.drain(p, m);
+  // Each done to as the screen would, and its press delivered: its part
+  // set where it is, nothing kept for a drain.
+  const auto pressed = [&](std::uint32_t at) { EXPECT_TRUE(bind::press(p, m, scene::Path{at})); };
+  pressed(0);  // the sound toggled
+  volume.setFraction(0.25f);
+  pressed(2);
+  lines.setFraction(0.5f);
+  pressed(3);
+  look.pick(1);
+  pressed(4);
+  name.setText("Ann");
+  pressed(5);
+  pressed(6);  // unsaid, so off: on
+  scene::hostWork().pressedNow = nullptr;
   const Settings &now = m.root().settings.fValue;
   EXPECT_TRUE(now.sound);
   EXPECT_TRUE(now.popups);  // its own field, though of the same type
@@ -139,10 +147,11 @@ TEST(WidgetsModel, AListSetsItsPartAndAnAreaSendsItsText) {
   auto &list = std::get<0>(p.fParts);
   auto &area = std::get<1>(p.fParts);
   EXPECT_EQ(list.current(), 0);
-  list.onChoose()(1);
+  list.choose(1);
+  EXPECT_TRUE(bind::press(p, m, scene::Path{0}));
   area.setText("hi");
-  area.onSubmit()("hi");  // as Enter calls it
-  binding.drain(p, m);
+  EXPECT_TRUE(bind::press(p, m, scene::Path{1}));  // as Enter is delivered
+  scene::hostWork().pressedNow = nullptr;
   EXPECT_EQ(m.root().chat.fValue.look, Look::kFrosted);
   ASSERT_EQ(m.root().chat.fValue.said.size(), 1u);
   EXPECT_EQ(m.root().chat.fValue.said[0], "hi");

@@ -97,6 +97,22 @@ public:
     this->invalidateLayout();
   }
   [[nodiscard]] int selected() const noexcept { return fSelected; }
+  // The tab picked: told at once, or -- where the action answers -- said
+  // pressed, the answer asked as the press is delivered (onPress).
+  void pick(int index)
+    requires skiff::scene::Answering<OnSelect>
+  {
+    fPicked = index;
+    skiff::scene::pressLater(fState);
+  }
+  void pick(int index) { std::invoke(fOnSelect, fTabs[static_cast<std::size_t>(index)].fValue); }
+  auto onPress()
+    requires skiff::scene::Answering<OnSelect>
+  {
+    return std::invoke(fOnSelect, fTabs[static_cast<std::size_t>(fPicked)].fValue);
+  }
+  [[nodiscard]] int picked() const noexcept { return fPicked; }
+  int fPicked = -1;
   [[nodiscard]] std::span<const Tab> tabs() const noexcept { return fTabs; }
 
   // Where a tab ended up, in screen coordinates.
@@ -218,7 +234,7 @@ public:
       skiff::scene::defaultKey(*this, skiff::scene::phase::target{}, press, reply);
       return;
     }
-    std::invoke(fOnSelect, fTabs[index].fValue);
+    this->pick(static_cast<int>(index));
     reply.handle();
   }
 
@@ -254,7 +270,7 @@ public:
     if (hit < 0) {
       return false;
     }
-    std::invoke(fOnSelect, fTabs[static_cast<std::size_t>(hit)].fValue);
+    this->pick(hit);
     return true;
   }
 

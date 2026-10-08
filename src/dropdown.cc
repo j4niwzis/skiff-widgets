@@ -346,6 +346,22 @@ public:
     this->markChosen();
   }
   [[nodiscard]] int current() const noexcept { return fCurrent; }
+  // The row chosen: told at once, or -- where the action answers -- said
+  // pressed, the answer asked as the press is delivered (onPress).
+  void choose(int index)
+    requires skiff::scene::Answering<OnChoose>
+  {
+    fChosen = index;
+    skiff::scene::pressLater(fState);
+  }
+  void choose(int index) { std::invoke(fOnChoose, index); }
+  auto onPress()
+    requires skiff::scene::Answering<OnChoose>
+  {
+    return std::invoke(fOnChoose, fChosen);
+  }
+  [[nodiscard]] int chosen() const noexcept { return fChosen; }
+  int fChosen = -1;
 
   void setExpanded(bool expanded) { this->setVisible(expanded); }
   [[nodiscard]] bool expanded() const noexcept { return fState.fVisible; }
@@ -384,7 +400,7 @@ public:
   void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
                  skiff::scene::PointerReply &reply) {
     if (const int index = this->rowOf(reply.fTarget); index >= 0) {
-      std::invoke(fOnChoose, index);
+      this->choose(index);
       reply.handle();
     }
   }
@@ -411,7 +427,7 @@ public:
                   const skiff::scene::semantic_action::activate &,
                   skiff::scene::Reply &reply) {
     if (const int index = this->rowOf(reply.fTarget); index >= 0) {
-      std::invoke(fOnChoose, index);
+      this->choose(index);
       reply.handle();
     }
   }

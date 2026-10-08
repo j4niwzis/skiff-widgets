@@ -14,42 +14,32 @@ export import skiff.widgets.dropdown;
 // skiff's widgets, bound to a skiff.model: a text field showing a part and
 // setting it as it is typed into; a button sending an event when pressed.
 //
-// Each keeps what it did in the action object it already holds and calls --
-// its own member, so nothing points back at the widget, which may move (a
-// row of a list does) -- and skiff.bind's drain takes it from there:
-// takeChanges() for a change of the part shown, takeEvents() for events.
+// Each answers what it is done to with a change of the part it shows
+// (bind::Own): the press said, and the change made where the part is as
+// it is answered -- nothing kept for a drain.
 
 export namespace skiff::widgets {
 
-// What a field was typed into, kept until it is taken.
-struct Typed {
-  std::optional<std::string> fText;
-  void operator()(std::string_view text) {
-    fText = std::string(text);
-    ++skiff::bind::pendingCount();
-  }
+// What a field was typed into: its part set to the text.
+template <class T> struct Typed {
+  using Answer = skiff::bind::Own<skiff::model::SetTo<T>>;
+  Answer operator()(std::string_view text) const { return skiff::bind::own(skiff::model::setTo(T{std::string(text)})); }
 };
 
 // A text box showing a part of the model -- a Named<..., std::string>, or
 // any type whose one member is its text -- and setting it as it is typed
 // into. Wrapped in bind::Bound by compose::bound<T>(TextField<T>(...)).
-template <class T> class TextField : public internal::TextBox<Typed> {
+template <class T> class TextField : public internal::TextBox<Typed<T>> {
 public:
   explicit TextField(std::string placeholder = {})
-      : internal::TextBox<Typed>(std::move(placeholder), Typed{}) {}
+      : internal::TextBox<Typed<T>>(std::move(placeholder), Typed<T>{}) {}
   TextField(Theme theme, std::string placeholder)
-      : internal::TextBox<Typed>(std::move(theme), std::move(placeholder), Typed{}) {}
+      : internal::TextBox<Typed<T>>(std::move(theme), std::move(placeholder), Typed<T>{}) {}
 
   void read(const T &now) {
     const std::string &shown = textOf(now);
     if (shown != this->text())
       this->setText(shown);
-  }
-  std::vector<skiff::model::SetTo<T>> takeChanges() {
-    std::vector<skiff::model::SetTo<T>> out;
-    if (auto typed = std::exchange(this->onChanged().fText, std::nullopt))
-      out.push_back(skiff::model::setTo(T{std::move(*typed)}));
-    return out;
   }
 
 private:
@@ -57,22 +47,20 @@ private:
   template <class Wrapped> static const std::string &textOf(const Wrapped &value) { return value.value; }
 };
 
-// The presses of a toggle, counted until they are taken.
-struct Pressed {
-  int fCount = 0;
-  void operator()() {
-    ++fCount;
-    ++skiff::bind::pendingCount();
-  }
+// What a model widget's own action is: a press said, the widget's own
+// onPress() making the change -- from what it shows.
+struct Answers {
+  using Answer = void;
+  void operator()(auto &&...) const {}
 };
 
 // A toggle showing a bool part -- a plain field, Field<&Settings::sound> --
 // or an optional one (unsaid is off), and setting it to the other when
 // pressed: twice, and it is as it was.
-template <class T = bool> class ToggleField : public internal::Toggle<Pressed> {
+template <class T = bool> class ToggleField : public internal::Toggle<Answers> {
 public:
-  ToggleField() : internal::Toggle<Pressed>(Pressed{}) {}
-  explicit ToggleField(Theme theme) : internal::Toggle<Pressed>(std::move(theme), Pressed{}) {}
+  ToggleField() : internal::Toggle<Answers>(Answers{}) {}
+  explicit ToggleField(Theme theme) : internal::Toggle<Answers>(std::move(theme), Answers{}) {}
 
   void read(const T &now) {
     fNow = onOf(now);
@@ -82,12 +70,8 @@ public:
     else
       this->setOnNow(fNow);
   }
-  std::vector<skiff::model::SetTo<T>> takeChanges() {
-    std::vector<skiff::model::SetTo<T>> out;
-    if (std::exchange(this->onToggle().fCount, 0) % 2 == 1)
-      out.push_back(skiff::model::setTo(T(!fNow)));
-    return out;
-  }
+  // Pressed: set to the other.
+  auto onPress() { return skiff::bind::own(skiff::model::setTo(T(!fNow))); }
 
 private:
   static bool onOf(bool now) { return now; }
@@ -98,34 +82,22 @@ private:
 ToggleField() -> ToggleField<bool>;
 explicit ToggleField(Theme) -> ToggleField<bool>;
 
-// Where a slider was dragged to, kept until it is taken.
-struct Slid {
-  std::optional<float> fFraction;
-  void operator()(float fraction) {
-    fFraction = fraction;
-    ++skiff::bind::pendingCount();
-  }
-};
 
 // A slider showing a number part between two bounds, and setting it as it
 // is dragged: a whole number rounded to the nearest.
-template <class T> class SliderField : public internal::SliderBar<Slid> {
+template <class T> class SliderField : public internal::SliderBar<Answers> {
 public:
-  SliderField(T low, T high) : internal::SliderBar<Slid>(Slid{}), fLow(low), fHigh(high) {}
+  SliderField(T low, T high) : internal::SliderBar<Answers>(Answers{}), fLow(low), fHigh(high) {}
   SliderField(Theme theme, T low, T high)
-      : internal::SliderBar<Slid>(std::move(theme), Slid{}), fLow(low), fHigh(high) {}
+      : internal::SliderBar<Answers>(std::move(theme), Answers{}), fLow(low), fHigh(high) {}
 
   void read(const T &now) {
     const double span = static_cast<double>(fHigh) - static_cast<double>(fLow);
     this->setFraction(span == 0.0 ? 0.0f
                                   : static_cast<float>((static_cast<double>(now) - static_cast<double>(fLow)) / span));
   }
-  std::vector<skiff::model::SetTo<T>> takeChanges() {
-    std::vector<skiff::model::SetTo<T>> out;
-    if (const auto fraction = std::exchange(this->onSet().fFraction, std::nullopt))
-      out.push_back(skiff::model::setTo(valueAt(*fraction, fLow, fHigh)));
-    return out;
-  }
+  // Dragged: set to the value it is at.
+  auto onPress() { return skiff::bind::own(skiff::model::setTo(valueAt(this->fraction(), fLow, fHigh))); }
 
 private:
   template <std::integral N> static N valueAt(float fraction, N low, N high) {
@@ -138,24 +110,16 @@ private:
   T fHigh;
 };
 
-// The tab picked, kept until it is taken: its place in the row.
-struct Picked {
-  std::optional<int> fIndex;
-  void operator()(int index) {
-    fIndex = index;
-    ++skiff::bind::pendingCount();
-  }
-};
 
 // A row of tabs, one for each value a part can be -- a variant's
 // alternatives, an enumeration's names -- showing the one it is and setting
 // it to the one picked.
-template <class T> class ChoiceTabs : public internal::TabBar<Picked> {
+template <class T> class ChoiceTabs : public internal::TabBar<Answers> {
 public:
   using Choice = std::pair<std::string, T>;
   explicit ChoiceTabs(std::vector<Choice> choices)
-      : internal::TabBar<Picked>(Picked{}), fChoices(std::move(choices)) {
-    std::vector<typename internal::TabBar<Picked>::Tab> tabs;
+      : internal::TabBar<Answers>(Answers{}), fChoices(std::move(choices)) {
+    std::vector<typename internal::TabBar<Answers>::Tab> tabs;
     for (std::size_t i = 0; i < fChoices.size(); ++i)
       tabs.push_back({fChoices[i].first, static_cast<int>(i)});
     this->setTabs(std::move(tabs));
@@ -165,12 +129,12 @@ public:
     const auto found = std::ranges::find(fChoices, now, &Choice::second);
     this->setSelected(found == fChoices.end() ? -1 : static_cast<int>(found - fChoices.begin()));
   }
-  std::vector<skiff::model::SetTo<T>> takeChanges() {
-    std::vector<skiff::model::SetTo<T>> out;
-    if (const auto index = std::exchange(this->onSelect().fIndex, std::nullopt);
-        index && *index >= 0 && static_cast<std::size_t>(*index) < fChoices.size())
-      out.push_back(skiff::model::setTo(fChoices[static_cast<std::size_t>(*index)].second));
-    return out;
+  // A tab picked: set to its value.
+  auto onPress() -> std::optional<skiff::bind::Own<skiff::model::SetTo<T>>> {
+    const int index = this->picked();
+    if (index < 0 || static_cast<std::size_t>(index) >= fChoices.size())
+      return std::nullopt;
+    return skiff::bind::own(skiff::model::setTo(fChoices[static_cast<std::size_t>(index)].second));
   }
 
 private:
@@ -179,11 +143,11 @@ private:
 
 // A dropdown's rows, one for each value a part can be, showing the one it
 // is and setting it to the one chosen.
-template <class T> class ChoiceList : public internal::DropdownList<Picked> {
+template <class T> class ChoiceList : public internal::DropdownList<Answers> {
 public:
   using Choice = std::pair<std::string, T>;
   explicit ChoiceList(std::vector<Choice> choices)
-      : internal::DropdownList<Picked>(Picked{}), fChoices(std::move(choices)) {
+      : internal::DropdownList<Answers>(Answers{}), fChoices(std::move(choices)) {
     this->setOptions(std::ranges::to<std::vector>(std::views::transform(fChoices, &Choice::first)));
   }
 
@@ -191,40 +155,32 @@ public:
     const auto found = std::ranges::find(fChoices, now, &Choice::second);
     this->setCurrent(found == fChoices.end() ? -1 : static_cast<int>(found - fChoices.begin()));
   }
-  std::vector<skiff::model::SetTo<T>> takeChanges() {
-    std::vector<skiff::model::SetTo<T>> out;
-    if (const auto index = std::exchange(this->onChoose().fIndex, std::nullopt);
-        index && *index >= 0 && static_cast<std::size_t>(*index) < fChoices.size())
-      out.push_back(skiff::model::setTo(fChoices[static_cast<std::size_t>(*index)].second));
-    return out;
+  // A row chosen: set to its value.
+  auto onPress() -> std::optional<skiff::bind::Own<skiff::model::SetTo<T>>> {
+    const int index = this->chosen();
+    if (index < 0 || static_cast<std::size_t>(index) >= fChoices.size())
+      return std::nullopt;
+    return skiff::bind::own(skiff::model::setTo(fChoices[static_cast<std::size_t>(index)].second));
   }
 
 private:
   std::vector<Choice> fChoices;
 };
 
-// What a text area sent, kept until it is taken.
-template <class E> struct Submitted {
-  std::vector<E> fItems;
-  void operator()(std::string_view text) {
-    fItems.push_back(E{std::string(text)});
-    ++skiff::bind::pendingCount();
-  }
-};
+
 
 // A text area sending an E made of its text each time it is submitted --
 // a message from a composer -- and emptied for the next.
-template <class E> class SubmitArea : public internal::TextArea<Submitted<E>> {
+template <class E> class SubmitArea : public internal::TextArea<Answers> {
 public:
-  using Out = skiff::model::Types<E>;
   explicit SubmitArea(std::string placeholder = {})
-      : internal::TextArea<Submitted<E>>(std::move(placeholder), Submitted<E>{}) {}
+      : internal::TextArea<Answers>(std::move(placeholder), Answers{}) {}
   SubmitArea(Theme theme, std::string placeholder)
-      : internal::TextArea<Submitted<E>>(std::move(theme), std::move(placeholder), Submitted<E>{}) {}
-  std::vector<E> takeEvents() {
-    auto sent = std::exchange(this->onSubmit().fItems, {});
-    if (!sent.empty())
-      this->setText({});
+      : internal::TextArea<Answers>(std::move(theme), std::move(placeholder), Answers{}) {}
+  // Sent: what is written, and the area emptied for the next.
+  E onPress() {
+    E sent{std::string(this->plainText())};
+    this->setText({});
     return sent;
   }
 };

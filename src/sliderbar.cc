@@ -111,8 +111,22 @@ public:
       this->setFraction(fraction);
     }
     if (skiff::scene::acts(fOnSet)) {
-      std::invoke(fOnSet, fraction);
+      this->setAt(fraction);
     }
+  }
+  // Moved to a value: told at once, or -- where the action answers -- said
+  // pressed, the answer asked as the press is delivered, at the value then.
+  void setAt(float fraction)
+    requires skiff::scene::Answering<OnSet>
+  {
+    this->setFraction(fraction);
+    skiff::scene::pressLater(fState);
+  }
+  void setAt(float fraction) { std::invoke(fOnSet, fraction); }
+  auto onPress()
+    requires(skiff::scene::Answering<OnSet> && !skiff::scene::Answering<OnDone>)
+  {
+    return std::invoke(fOnSet, fFraction);
   }
   void done() {
     if (skiff::scene::acts(fOnDone)) {
