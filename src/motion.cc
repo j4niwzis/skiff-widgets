@@ -269,13 +269,22 @@ private:
   skia::SkColor fSheetColour = skia::colorSetARGB(255, 0, 0, 0);
 };
 
+// What pushing back a drawer or dismissing a dialog -- a press off it, a
+// swipe, Esc -- does: closes it; or says it was pressed -- one open while a
+// model's part says so, whose onPress() changes that part, closing it as
+// it is read.
+namespace dismiss {
+struct closes {};
+struct pressed {};
+} // namespace dismiss
+
 // A navigation drawer: a panel pulled out from the left edge over a base,
 // with the rest of the base dimmed under a scrim. A click on the scrim, or
 // Esc from inside the panel, pushes it back. The panel is there all along --
 // hidden while pushed in, so nothing in it takes focus -- and draws on a
 // sheet of its own colour. It is a sweeping movement: below
 // skiff::paint::motion::full it comes and goes at once.
-template <class Base, class Content>
+template <class Base, class Content, class Dismiss = dismiss::closes>
 class Drawer : public skiff::scene::Node {
 public:
   // The base and the panel, each made in place from its own arguments:
@@ -364,7 +373,7 @@ public:
   void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
                  skiff::scene::PointerReply &reply) {
     if (fOpen && reply.fTarget == fScrim.id()) {
-      this->close();
+      this->dismissed(Dismiss{});
       reply.handle();
     }
   }
@@ -386,7 +395,7 @@ public:
     const float dx = from->fX - lift.x;
     const float dy = lift.y - from->fY;
     if (dx > 90.0f && std::abs(dy) < dx * 0.5f) {
-      this->close();
+      this->dismissed(Dismiss{});
       reply.handle();
     }
   }
@@ -394,12 +403,15 @@ public:
   void onKey(skiff::scene::phase::bubble, const skiff::scene::key::down &press,
              skiff::scene::Reply &reply) {
     if (fOpen && press.key == skiff::scene::keys::kEscape) {
-      this->close();
+      this->dismissed(Dismiss{});
       reply.handle();
     }
   }
 
 private:
+  void dismissed(dismiss::closes) { this->close(); }
+  void dismissed(dismiss::pressed) { skiff::scene::pressLater(fState); }
+
   std::optional<skia::SkPoint> fSwipeFrom;
   // What covers the base: it takes the pointer, so a press off the panel
   // closes it rather than reaching what is under it.
@@ -459,14 +471,6 @@ using DialogPlace = spl::variant<dialog_place::centred, dialog_place::near_top>;
 // last among the parent's children -- and holds nothing while shut. The
 // program destroys a shut one with dropClosed(), between events. It is a
 // subtle movement: at skiff::paint::motion::none it comes and goes at once.
-// What a press off a dialog, or Esc from inside it, does: closes it; or
-// says the dialog was pressed -- one open while a model's part says so,
-// whose onPress() empties that part, closing it as it is read.
-namespace dismiss {
-struct closes {};
-struct pressed {};
-} // namespace dismiss
-
 template <class Content, class Dismiss = dismiss::closes>
 class Dialog : public skiff::scene::Node {
 public:
