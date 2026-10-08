@@ -657,7 +657,7 @@ public:
           reply.handle();
           return;
         }
-        std::invoke(fOnSubmit, std::string_view(this->plainText()));
+        this->submitted();
       } else {
         return; // a form's to act on
       }
@@ -1416,6 +1416,23 @@ private:
   std::vector<Atom> fAtoms;
   std::vector<Span> fSpans;
   std::string fPlaceholder;
+  // What was written, sent: where the action answers, said pressed -- its
+  // answer asked as the press is delivered, with the text as it is then.
+  void submitted()
+    requires skiff::scene::Answering<OnSubmit>
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void submitted() { std::invoke(fOnSubmit, std::string_view(this->plainText())); }
+
+public:
+  auto onPress()
+    requires skiff::scene::Answering<OnSubmit>
+  {
+    return std::invoke(fOnSubmit, std::string_view(this->plainText()));
+  }
+
+private:
   [[no_unique_address]] OnSubmit fOnSubmit;
 
 public:
