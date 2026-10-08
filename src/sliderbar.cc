@@ -116,9 +116,22 @@ public:
   }
   void done() {
     if (skiff::scene::acts(fOnDone)) {
-      std::invoke(fOnDone, fFraction);
+      this->doneAt();
     }
   }
+  // Let go at a value: where the action answers, said pressed and the
+  // answer asked as the press is delivered, with the value it was let go at.
+  auto onPress()
+    requires skiff::scene::Answering<OnDone>
+  {
+    return std::invoke(fOnDone, fFraction);
+  }
+  void doneAt()
+    requires skiff::scene::Answering<OnDone>
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void doneAt() { std::invoke(fOnDone, fFraction); }
 
   using Node::onPointer;
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &press,
