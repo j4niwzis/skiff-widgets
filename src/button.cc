@@ -131,6 +131,9 @@ public:
                     alpha * (fEnabled ? 1.0f : 0.5f), true);
   }
 
+  // The action it calls, for what holds the button to read it back.
+  Action &action() noexcept { return fAction; }
+
 private:
   bool fPrimary = false; // filled in the accent rather than the surface
   bool fOutlined = false;

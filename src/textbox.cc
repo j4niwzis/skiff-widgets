@@ -327,6 +327,9 @@ public:
     }
   }
 
+  // What it calls when its text changes, for what holds it to read back.
+  OnChanged &onChanged() noexcept { return fOnChanged; }
+
 private:
   // All of it selected: taken out, the caret at the start.
   void takeAll() {

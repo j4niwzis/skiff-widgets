@@ -24,3 +24,4 @@ export import skiff.widgets.avatar;
 export import skiff.widgets.pill;
 export import skiff.widgets.loader;
 export import skiff.widgets.wallpaper;
+export import skiff.widgets.model;
