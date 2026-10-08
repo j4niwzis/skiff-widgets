@@ -159,12 +159,12 @@ TEST(WidgetsModel, APressIsAnEventItsScopeTakes) {
   button.fState.fBounds = skia::SkRect::MakeWH(80, 30);
   ASSERT_TRUE(button.onClick(10, 10));
   ASSERT_EQ(scene::hostWork().pressed.size(), 1u);
-  EXPECT_EQ(scene::hostWork().pressed.back(), &button.fState);
+  EXPECT_EQ(scene::hostWork().pressed.back().back(), &button.fState);
   scene::hostWork().pressed.clear();
   // Delivered along its path -- the page.s second part -- twice: its
   // scope takes the event each time.
-  EXPECT_TRUE(bind::press(p, m, {button.fState.fId}));
-  EXPECT_TRUE(bind::press(p, m, {button.fState.fId}));
+  EXPECT_TRUE(bind::press(p, m, {&p.fState, &button.fState}));
+  EXPECT_TRUE(bind::press(p, m, {&p.fState, &button.fState}));
   EXPECT_EQ(m.look<Count>()->value, 2);
 }
 

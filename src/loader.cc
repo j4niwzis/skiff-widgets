@@ -40,9 +40,26 @@ public:
     if (!skiff::scene::acts(fOnPress)) {
       return false;
     }
-    std::invoke(fOnPress);
+    this->act();
     return true;
   }
+  // What a press asks for, where its action answers: asked as the press is
+  // delivered.
+  auto onPress()
+    requires skiff::scene::Answering<OnPress>
+  {
+    return std::invoke(fOnPress);
+  }
+
+private:
+  void act()
+    requires skiff::scene::Answering<OnPress>
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void act() { std::invoke(fOnPress); }
+
+public:
   [[nodiscard]] bool settling() const { return this->visible() && !fStopped; }
   // Turning while it shows; hidden, not ticked -- nor repainted each frame.
   [[nodiscard]] bool wantsTick() const { return fState.fVisible && fState.fAlpha > 0.001f; }
