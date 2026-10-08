@@ -163,8 +163,8 @@ TEST(WidgetsModel, APressIsAnEventItsScopeTakes) {
   scene::hostWork().pressed.clear();
   // Delivered along its path -- the page.s second part -- twice: its
   // scope takes the event each time.
-  EXPECT_TRUE(bind::press(p, m, scene::Path{1}));
-  EXPECT_TRUE(bind::press(p, m, scene::Path{1}));
+  EXPECT_TRUE(bind::press(p, m, {button.fState.fId}));
+  EXPECT_TRUE(bind::press(p, m, {button.fState.fId}));
   EXPECT_EQ(m.look<Count>()->value, 2);
 }
 
