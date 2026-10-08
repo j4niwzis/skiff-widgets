@@ -287,6 +287,12 @@ public:
 
 private:
   [[no_unique_address]] OnSelect fOnSelect;
+
+public:
+  // What selecting a tab calls, as held: where a model's tabs keep the pick.
+  OnSelect &onSelect() noexcept { return fOnSelect; }
+
+private:
   [[no_unique_address]] IsActive fIsActive;
   [[no_unique_address]] Decorate fDecorate;
   std::vector<Tab> fTabs;

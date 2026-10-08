@@ -196,6 +196,13 @@ public:
 private:
   [[no_unique_address]] OnSet fOnSet;
   [[no_unique_address]] OnDone fOnDone;
+
+public:
+  // What dragging it calls, as held: where a model's slider keeps where it
+  // was dragged to.
+  OnSet &onSet() noexcept { return fOnSet; }
+
+private:
   float fFraction = 0.0f;
   bool fDragging = false;
 };
@@ -522,6 +529,12 @@ private:
   }
 
   [[no_unique_address]] OnToggle fOnToggle;
+
+public:
+  // What pressing it calls, as held: where a model's toggle keeps its presses.
+  OnToggle &onToggle() noexcept { return fOnToggle; }
+
+private:
   bool fOn = false;
   float fKnob = 0.0f;
   double fLastMs = 0.0;

@@ -50,6 +50,57 @@ TEST(WidgetsModel, TypingSetsThePartAndTheFieldShowsIt) {
   EXPECT_EQ(field.text(), "bob");
 }
 
+// Plain fields of one type, bound by their member pointers: each widget
+// sets its own field, and shows what its field becomes.
+enum class Look { kSolid, kFrosted };
+struct Settings {
+  bool sound = false;
+  bool popups = true;
+  float volume = 0.5f;
+  int lines = 3;
+  Look look = Look::kSolid;
+  std::string name;
+};
+struct SettingsRoot {
+  model::Tracked<Settings> settings;
+};
+using SettingsModel = model::Model<SettingsRoot, Reactions>;
+auto settingsPage() {
+  return column(vbox(4), bound<model::Field<&Settings::sound>>(widgets::ToggleField()),
+                bound<model::Field<&Settings::popups>>(widgets::ToggleField()),
+                bound<model::Field<&Settings::volume>>(widgets::SliderField<float>(0.0f, 1.0f)),
+                bound<model::Field<&Settings::lines>>(widgets::SliderField<int>(1, 11)),
+                bound<model::Field<&Settings::look>>(widgets::ChoiceTabs<Look>(
+                    {{"Solid", Look::kSolid}, {"Frosted", Look::kFrosted}})),
+                bound<model::Field<&Settings::name>>(widgets::TextField<std::string>("Name")));
+}
+TEST(WidgetsModel, PlainFieldsAreBoundByTheirMemberPointers) {
+  SettingsModel m;
+  auto p = settingsPage();
+  bind::Binding<SettingsModel> binding;
+  binding.refresh(p, m);
+  auto &[sound, popups, volume, lines, look, name] = p.fParts;
+  EXPECT_FALSE(sound.on());
+  EXPECT_TRUE(popups.on());
+  sound.onToggle()();  // as a press calls it
+  volume.onSet()(0.25f);
+  lines.onSet()(0.5f);
+  look.onSelect()(1);
+  name.onChanged()("Ann");
+  binding.drain(p, m);
+  const Settings &now = m.root().settings.fValue;
+  EXPECT_TRUE(now.sound);
+  EXPECT_TRUE(now.popups);  // its own field, though of the same type
+  EXPECT_FLOAT_EQ(now.volume, 0.25f);
+  EXPECT_EQ(now.lines, 6);
+  EXPECT_EQ(now.look, Look::kFrosted);
+  EXPECT_EQ(now.name, "Ann");
+  m.apply(model::edit(model::placeOf<model::Field<&Settings::popups>, SettingsRoot>(), model::flip));
+  binding.refresh(p, m);
+  EXPECT_FALSE(popups.on());
+  EXPECT_EQ(look.selected(), 1);
+}
+
 TEST(WidgetsModel, APressIsAnEventItsScopeTakes) {
   Model m;
   auto p = page();
