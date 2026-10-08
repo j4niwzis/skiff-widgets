@@ -143,6 +143,17 @@ public:
 
 private:
   [[no_unique_address]] OnOpen fOnOpen;
+
+public:
+  // Where its action keeps the events it sent: taken by a walk that drains
+  // them.
+  auto takeEvents()
+    requires requires(OnOpen &a) { a.fEmitted; }
+  {
+    return std::exchange(fOnOpen.fEmitted, {});
+  }
+
+private:
   std::string fLabel;
   std::string fValue;
   bool fOpen = false;
@@ -171,7 +182,7 @@ public:
 // The dropdown button: made for its action in a release build, over
 // AnyAction otherwise.
 template <class OnOpen = skiff::scene::NoAction>
-using DropdownButton = std::conditional_t<kErasedActions, ErasedDropdownButton<OnOpen>, internal::DropdownButton<OnOpen>>;
+using DropdownButton = std::conditional_t<kErasedActions && !KeepsEvents<OnOpen>, ErasedDropdownButton<OnOpen>, internal::DropdownButton<OnOpen>>;
 
 
 // How a dropdown list's rows look: the list's, copied to each row so a row
@@ -441,6 +452,17 @@ private:
   [[no_unique_address]] OnChoose fOnChoose;
 
 public:
+  // Where its action keeps the events it sent: taken by a walk that drains
+  // them.
+  auto takeEvents()
+    requires requires(OnChoose &a) { a.fEmitted; }
+  {
+    return std::exchange(fOnChoose.fEmitted, {});
+  }
+
+private:
+
+public:
   // What choosing a row calls, as held: where a model's list keeps the pick.
   OnChoose &onChoose() noexcept { return fOnChoose; }
 
@@ -469,7 +491,7 @@ public:
 // The dropdown list: made for its action in a release build, over
 // an erased call otherwise.
 template <class OnChoose = skiff::scene::NoAction>
-using DropdownList = std::conditional_t<kErasedActions, ErasedDropdownList<OnChoose>, internal::DropdownList<OnChoose>>;
+using DropdownList = std::conditional_t<kErasedActions && !KeepsEvents<OnChoose>, ErasedDropdownList<OnChoose>, internal::DropdownList<OnChoose>>;
 
 
 } // namespace skiff::widgets

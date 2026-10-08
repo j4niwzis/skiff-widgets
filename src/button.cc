@@ -175,6 +175,6 @@ public:
 // The button: made for its action in a release build, over AnyAction
 // otherwise.
 template <class Action = skiff::scene::NoAction>
-using Button = std::conditional_t<kErasedActions, ErasedButton<Action>, internal::Button<Action>>;
+using Button = std::conditional_t<kErasedActions && !KeepsEvents<Action>, ErasedButton<Action>, internal::Button<Action>>;
 
 } // namespace skiff::widgets

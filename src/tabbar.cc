@@ -289,6 +289,17 @@ private:
   [[no_unique_address]] OnSelect fOnSelect;
 
 public:
+  // Where its action keeps the events it sent: taken by a walk that drains
+  // them.
+  auto takeEvents()
+    requires requires(OnSelect &a) { a.fEmitted; }
+  {
+    return std::exchange(fOnSelect.fEmitted, {});
+  }
+
+private:
+
+public:
   // What selecting a tab calls, as held: where a model's tabs keep the pick.
   OnSelect &onSelect() noexcept { return fOnSelect; }
 
@@ -330,7 +341,7 @@ public:
 // otherwise.
 template <class OnSelect = skiff::scene::NoAction, class IsActive = skiff::scene::NoAction,
           class Decorate = skiff::scene::NoAction>
-using TabBar = std::conditional_t<kErasedActions, ErasedTabBar<OnSelect, IsActive, Decorate>,
+using TabBar = std::conditional_t<kErasedActions && !KeepsEvents<OnSelect, IsActive, Decorate>, ErasedTabBar<OnSelect, IsActive, Decorate>,
                                   internal::TabBar<OnSelect, IsActive, Decorate>>;
 
 
