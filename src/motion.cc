@@ -459,7 +459,15 @@ using DialogPlace = spl::variant<dialog_place::centred, dialog_place::near_top>;
 // last among the parent's children -- and holds nothing while shut. The
 // program destroys a shut one with dropClosed(), between events. It is a
 // subtle movement: at skiff::paint::motion::none it comes and goes at once.
-template <class Content>
+// What a press off a dialog, or Esc from inside it, does: closes it; or
+// says the dialog was pressed -- one open while a model's part says so,
+// whose onPress() empties that part, closing it as it is read.
+namespace dismiss {
+struct closes {};
+struct pressed {};
+} // namespace dismiss
+
+template <class Content, class Dismiss = dismiss::closes>
 class Dialog : public skiff::scene::Node {
 public:
   Dialog() {
@@ -587,7 +595,7 @@ public:
                  skiff::scene::PointerReply &reply) {
     if (this->shown() != nullptr && reply.fTarget == fScrim.id()) {
       if (fDismissable) {
-        this->close();
+        this->dismissed(Dismiss{});
       }
       reply.handle();
     }
@@ -597,13 +605,16 @@ public:
              skiff::scene::Reply &reply) {
     if (this->shown() != nullptr && press.key == skiff::scene::keys::kEscape) {
       if (fDismissable) {
-        this->close();
+        this->dismissed(Dismiss{});
       }
       reply.handle();
     }
   }
 
 private:
+  void dismissed(dismiss::closes) { this->close(); }
+  void dismissed(dismiss::pressed) { skiff::scene::pressLater(fState); }
+
   class Scrim : public skiff::nodes::Box<> {
   public:
     Scrim() : skiff::nodes::Box<>(skia::colorSetARGB(115, 0, 0, 0)) {}
