@@ -201,6 +201,9 @@ public:
   // What dragging it calls, as held: where a model's slider keeps where it
   // was dragged to.
   OnSet &onSet() noexcept { return fOnSet; }
+  // And what letting go of it calls: where a model's slider keeps where it
+  // was let go.
+  OnDone &onDone() noexcept { return fOnDone; }
 
 private:
   float fFraction = 0.0f;
