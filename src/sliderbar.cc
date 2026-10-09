@@ -472,6 +472,7 @@ public:
   void setOnNow(bool on) {
     fOn = on;
     fKnob = on ? 1.0f : 0.0f;
+    fLastMs = 0.0;
     this->markDamaged();
   }
   void setOn(bool on) {
@@ -479,6 +480,9 @@ public:
       return;
     }
     fOn = on;
+    // At rest this widget is not ticked. Start the new transition now,
+    // rather than applying all the time since its previous animation.
+    fLastMs = 0.0;
     this->markDamaged();
   }
   [[nodiscard]] bool on() const noexcept { return fOn; }
