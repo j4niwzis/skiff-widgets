@@ -115,7 +115,7 @@ public:
     if (at.button != 3) {
       return;
     }
-    skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = fAll, .masked = fMasked});
+    skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = fAll, .masked = fMasked, .text = !fText.empty()});
     reply.handle();
   }
 

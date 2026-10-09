@@ -484,7 +484,8 @@ public:
       }
       this->showCaret();
       skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{
-          .selection = this->hasSelection(), .masked = fMasked, .formats = kFormatsIn<Format> && !fSingle});
+          .selection = this->hasSelection(), .masked = fMasked, .formats = kFormatsIn<Format> && !fSingle,
+          .undo = !fUndo.empty(), .redo = !fRedo.empty(), .text = !fText.empty()});
       reply.handle();
       return;
     }
