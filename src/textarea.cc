@@ -671,11 +671,17 @@ public:
       if (!this->hasSelection() || fMasked) {
         return;
       }
-      skiff::scene::setClipboardText(this->selected());
+      std::vector<skiff::scene::ClipboardAtom> atoms;
+      for (const auto& atom : fAtoms)
+        if (atom.first >= this->low() && atom.last <= this->high())
+          atoms.push_back({atom.first - this->low(), atom.last - this->low(), atom.target, atom.plain, atom.picture});
+      auto copied = skiff::scene::clipboardFragment(this->selected(), std::move(atoms));
+      skiff::scene::clipboardCandidate() = copied;
+      skiff::scene::setClipboardText(copied.text);
       // Its spans kept beside it, by offsets in it: pasted back as it was,
       // where what is pasted is still that text -- as tdesktop keeps its
       // tags beside the text on the clipboard.
-      Copied() = CopiedSpans<Format>{this->selected(), this->spansIn(this->low(), this->high())};
+      Copied() = CopiedSpans<Format>{copied.text, this->spansIn(this->low(), this->high())};
       if (press.key == keys::kX) {
         this->erase(this->low(), this->high());
       }
@@ -688,7 +694,15 @@ public:
       // What this field copied, with its spans -- unless Shift asks for it
       // plain (Ctrl+Shift+V).
       const bool formatted = !shift && !fSingle && !fMasked && Copied() && Copied()->text == pasted;
-      this->insert(pasted);
+      const auto rich = skiff::scene::clipboardRichText();
+      const bool objects = !shift && !fSingle && !fMasked && rich && rich->text == pasted;
+      this->insert(objects ? rich->display : pasted);
+      if (objects) {
+        for (const auto& atom : rich->atoms)
+          fAtoms.push_back({at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}});
+        std::ranges::sort(fAtoms, {}, &Atom::first);
+        this->markDamaged();
+      }
       if (formatted) {
         std::ranges::move(std::views::transform(Copied()->spans,
                                                 [at](Span one) {

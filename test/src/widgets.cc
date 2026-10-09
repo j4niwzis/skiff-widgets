@@ -8,6 +8,7 @@ import skiff.widgets.button;
 import skiff.widgets.dropdown;
 import skiff.widgets.sliderbar;
 import skiff.widgets.textbox;
+import skiff.widgets.textarea;
 import skiff.widgets.model;
 
 #include "gtest/gtest-macros.h"
@@ -428,4 +429,26 @@ TEST(ModelButton, BoundEventAndLabelFollowModelEdits) {
   EXPECT_EQ(button.onPress().value, 2);
   button.read(event{3});
   EXPECT_EQ(button.onPress().value, 3);
+}
+
+TEST(TextArea, PastingCopiedCustomEmojiKeepsAtomAndPlainPasteKeepsItsLabel) {
+  scene::clipboardCandidate() = scene::clipboardFragment("Hi \u2003!", {{3, 6, "mxc://example/emoji", ":party:", true}});
+  scene::setClipboardText("Hi :party:!");
+  scene::clipboardContents() = "Hi :party:!";
+  widgets::TextArea<> field;
+  scene::Reply reply;
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kV,
+      scene::Modifiers{}.with<scene::modifier::control>()}, reply);
+  EXPECT_EQ(field.text(), "Hi \u2003!");
+  EXPECT_EQ(field.plainText(), "Hi :party:!");
+  ASSERT_EQ(field.atoms().size(), 1u);
+  EXPECT_EQ(field.atoms()[0].target, "mxc://example/emoji");
+  EXPECT_TRUE(field.atoms()[0].picture);
+  field.setText("");
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kV,
+      scene::Modifiers{}.with<scene::modifier::control>().with<scene::modifier::shift>()}, reply);
+  EXPECT_EQ(field.text(), "Hi :party:!");
+  EXPECT_TRUE(field.atoms().empty());
+  scene::clipboardCandidate().reset();
+  scene::clipboardRichText().reset();
 }
