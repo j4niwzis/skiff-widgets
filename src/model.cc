@@ -4,6 +4,8 @@ import std;
 import skiff.scene;
 import skiff.model;
 import skiff.bind;
+import skiff.nodes;
+import skiff.compose;
 export import skiff.widgets.button;
 export import skiff.widgets.textbox;
 export import skiff.widgets.sliderbar;
@@ -33,8 +35,10 @@ template <class T> class TextField : public internal::TextBox<Typed<T>> {
 public:
   explicit TextField(std::string placeholder = {})
       : internal::TextBox<Typed<T>>(std::move(placeholder), Typed<T>{}) {}
-  TextField(Theme theme, std::string placeholder)
-      : internal::TextBox<Typed<T>>(std::move(theme), std::move(placeholder), Typed<T>{}) {}
+  TextField(Theme theme, std::string placeholder, bool masked = false)
+      : internal::TextBox<Typed<T>>(std::move(theme), std::move(placeholder), Typed<T>{}) {
+    this->setMasked(masked);
+  }
 
   void read(const T &now) {
     const std::string &shown = textOf(now);
@@ -82,7 +86,6 @@ private:
 ToggleField() -> ToggleField<bool>;
 explicit ToggleField(Theme) -> ToggleField<bool>;
 
-
 // A slider showing a number part between two bounds, and setting it as it
 // is dragged: a whole number rounded to the nearest.
 template <class T> class SliderField : public internal::SliderBar<Answers> {
@@ -110,6 +113,92 @@ private:
   T fHigh;
 };
 
+// A slider selecting one of a discrete list, in order.
+template <class T>
+class ChoiceSliderField
+    : public internal::SliderBar<skiff::scene::NoAction, Answers> {
+public:
+  ChoiceSliderField(Theme theme, std::vector<T> choices)
+      : internal::SliderBar<skiff::scene::NoAction, Answers>(
+            std::move(theme), skiff::scene::NoAction{}, Answers{}),
+        fChoices(std::move(choices)) {}
+  void read(const T &now) {
+    const auto found = std::ranges::find(fChoices, now);
+    const auto last = fChoices.size() > 1 ? fChoices.size() - 1 : 1;
+    this->setFraction(found == fChoices.end()
+                          ? 0.0f
+                          : static_cast<float>(found - fChoices.begin()) /
+                                static_cast<float>(last));
+  }
+  auto onPress() -> std::optional<skiff::bind::Own<skiff::model::SetTo<T>>> {
+    if (fChoices.empty())
+      return std::nullopt;
+    const auto index = static_cast<std::size_t>(
+        std::lround(std::clamp(this->fraction(), 0.0f, 1.0f) *
+                    static_cast<float>(fChoices.size() - 1)));
+    return skiff::bind::own(skiff::model::setTo(fChoices[index]));
+  }
+
+private:
+  std::vector<T> fChoices;
+};
+
+// A radio row showing one choice of a model part. Input and semantics
+// agree with the value read; the screen never updates its mark by hand.
+template <class T> struct ChoiceRowField : skiff::compose::Stacked {
+  Theme fTheme;
+  T fChoice;
+  struct Parts {
+    skiff::nodes::Text label;
+    skiff::nodes::Icon mark;
+  } parts;
+  ChoiceRowField(Theme theme, std::string label, T choice)
+      : Stacked(skiff::compose::hbox(16.0f,
+                                     {.fillX = true,
+                                      .height = 46.0f,
+                                      .padding = {0.0f, 20.0f, 0.0f, 20.0f},
+                                      .hoverBackground = theme.fSurfaceHover,
+                                      .focusBackground = theme.fSurfaceHover})),
+        fTheme(std::move(theme)), fChoice(std::move(choice)),
+        parts{.label = skiff::compose::styled(
+                  {.grow = skiff::scene::axes::kX,
+                   .alignSelf = skiff::scene::align::kMiddle},
+                  skiff::nodes::Text(std::move(label), 15.0f, fTheme.fText)),
+              .mark = skiff::compose::styled(
+                  {.width = 20.0f,
+                   .height = 20.0f,
+                   .alignSelf = skiff::scene::align::kMiddle},
+                  skiff::nodes::Icon(shape(false), fTheme.fTextDim))} {}
+  static skiff::nodes::IconShape shape(bool chosen) {
+    skiff::nodes::IconShape result{
+        {{skiff::nodes::mark::circle{0.0f, 0.0f, 8.0f}, 2.0f}}};
+    if (chosen)
+      result.marks.push_back(
+          {skiff::nodes::mark::circle{0.0f, 0.0f, 4.0f}, 0.0f, true});
+    return result;
+  }
+  void read(const T &now) {
+    const bool chosen = now == fChoice;
+    this->apply({.selected = chosen});
+    parts.mark.setShape(shape(chosen));
+    parts.mark.setColour(chosen ? fTheme.fAccent : fTheme.fTextDim);
+  }
+  auto onPress() const {
+    return skiff::bind::own(skiff::model::setTo(fChoice));
+  }
+  bool acceptsInput() const { return true; }
+  bool hoverChangesAppearance() const { return true; }
+  bool focusChangesAppearance() const { return true; }
+  skiff::scene::Semantics semantics() const {
+    skiff::scene::Semantics result;
+    result.fRole = skiff::scene::semantic_role::button{};
+    result.fLabel = parts.label.text();
+    result.fSelected = this->fState.selected();
+    result.fActions = {skiff::scene::semantic_action::focus{},
+                       skiff::scene::semantic_action::activate{}};
+    return result;
+  }
+};
 
 // A row of tabs, one for each value a part can be -- a variant's
 // alternatives, an enumeration's names -- showing the one it is and setting
@@ -167,8 +256,6 @@ private:
   std::vector<Choice> fChoices;
 };
 
-
-
 // A text area sending an E made of its text each time it is submitted --
 // a message from a composer -- and emptied for the next.
 template <class E> class SubmitArea : public internal::TextArea<Answers> {
@@ -202,6 +289,12 @@ public:
       : internal::Button<Sent<E>>(std::move(label), Sent<E>{std::move(event)}) {}
   SendButton(Theme theme, std::string label, E event)
       : internal::Button<Sent<E>>(std::move(theme), std::move(label), Sent<E>{std::move(event)}) {}
+  // A bound action follows model edits without replacing the focused button.
+  void read(E event) { this->action().fEvent = std::move(event); }
+  void read(std::pair<std::string, E> value) {
+    this->setLabel(std::move(value.first));
+    this->read(std::move(value.second));
+  }
 };
 
 } // namespace skiff::widgets
