@@ -428,7 +428,9 @@ private:
     const float shift = -fPanelWidth * (1.0f - value);
     fSheet.apply({.shiftX = shift});
     fContent.apply({.shiftX = shift});
-    this->markDamaged();
+    // These children report their own colour and position changes. Layout
+    // also calls place() when only the base changed; damaging the drawer
+    // here repainted the whole window while it was closed and stationary.
   }
   float fPanelWidth = 0.0f;
 

@@ -2,6 +2,8 @@ import std;
 import gtest;
 import skia;
 import skiff.scene;
+import skiff.nodes.box;
+import skiff.widgets.motion;
 import skiff.widgets.button;
 import skiff.widgets.dropdown;
 import skiff.widgets.sliderbar;
@@ -333,6 +335,58 @@ TEST(Accessibility, SemanticActionsOperateWidgets) {
 
   EXPECT_TRUE(s.dispatchSemantic(tree[2].fId, scene::semantic_action::set_value{0.0f, "artist"}));
   EXPECT_EQ(s.root().box.text(), "artist");
+}
+
+
+// The base changes independently of the closed drawer: a composer relayout
+// or a scrolling list must not repaint the full window-sized wrapper.
+auto drawerScene() {
+  using Box = skiff::nodes::Box<>;
+  using Base = skiff::nodes::Box<Box>;
+  using Drawer = widgets::Drawer<Base, Box>;
+  auto made = std::make_unique<scene::Scene<Drawer>>(
+      std::in_place, std::piecewise_construct,
+      std::make_tuple(skia::SkColor{0xFF202020},
+                      scene::make<Box>({.width = 40.0f, .height = 20.0f}, skia::SkColor{0xFFFFFFFF})),
+      std::make_tuple(skia::SkColor{0xFF303030}));
+  made->root().base().apply({.fill = true});
+  made->layoutIfNeeded(skia::SkRect::MakeWH(800.0f, 600.0f));
+  (void)made->finishFrame();
+  return made;
+}
+
+TEST(Drawer, ClosedBaseRelayoutKeepsDamageLocal) {
+  auto made = drawerScene();
+  auto& child = std::get<0>(made->root().base().fChildren);
+  for (int frame = 0; frame < 3; ++frame) {
+    child.invalidateLayout();
+    made->layoutIfNeeded(skia::SkRect::MakeWH(800.0f, 600.0f));
+    const auto damage = made->finishFrame();
+    EXPECT_EQ(damage.fDamage, child.bounds());
+  }
+}
+
+TEST(Drawer, AnimatedBasePaintKeepsDamageLocal) {
+  auto made = drawerScene();
+  auto& child = std::get<0>(made->root().base().fChildren);
+  for (int frame = 0; frame < 3; ++frame) {
+    child.markDamaged();
+    // Another changing child can require the base to lay out in this frame.
+    made->root().base().fState.relayoutQuietly();
+    made->layoutIfNeeded(skia::SkRect::MakeWH(800.0f, 600.0f));
+    EXPECT_EQ(made->finishFrame().fDamage, child.bounds());
+  }
+}
+
+TEST(Drawer, OpeningStillRepaintsTheScrim) {
+  auto made = drawerScene();
+  made->root().open();
+  made->update(0.0);
+  made->layoutIfNeeded(skia::SkRect::MakeWH(800.0f, 600.0f));
+  (void)made->finishFrame();
+  made->update(100.0);
+  made->layoutIfNeeded(skia::SkRect::MakeWH(800.0f, 600.0f));
+  EXPECT_TRUE(made->finishFrame().fDamage.contains(skia::SkRect::MakeWH(800.0f, 600.0f)));
 }
 
 } // namespace
