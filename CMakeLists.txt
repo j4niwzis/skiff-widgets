@@ -27,7 +27,7 @@ endif()
 
 project(
   skiff-widgets
-  VERSION 0.1.2
+  VERSION 0.1.0
   LANGUAGES CXX
 )
 
@@ -60,15 +60,15 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::skiff)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 54c7a4691437d1582db0efea9291d84d5ef47995
-    VERSION 0.1.1
+    GIT_TAG 05afd04da8a1f38fe21197c4828e5dd194f3c116
+    VERSION 0.1.0
   )
 endif()
 
 # One call, answered by whatever is right: a target this build already has,
 # a copy installed on the machine, or the revision named above.
 if(NOT TARGET skiff::skiff)
-  find_package(skiff 0.1.1 REQUIRED)
+  find_package(skiff 0.1.0 REQUIRED)
 endif()
 
 # Globbed, so that adding a widget is adding a file.
