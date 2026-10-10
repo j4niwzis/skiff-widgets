@@ -48,6 +48,7 @@ public:
 
 private:
   static const std::string &textOf(const std::string &value) { return value; }
+  static std::string textOf(const std::optional<std::string>& value) { return value.value_or(""); }
   template <class Wrapped> static const std::string &textOf(const Wrapped &value) { return value.value; }
 };
 

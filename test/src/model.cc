@@ -196,3 +196,13 @@ TEST(WidgetsModel, DialogRefreshesLocalEditsWithoutChangingOuterModel) {
   EXPECT_FALSE(std::get<0>(shown.fParts).onPress().fChange.fValue);
 }
 } // namespace
+
+TEST(WidgetsModel, OptionalTextShowsAbsentAndPresentValues) {
+  widgets::TextField<std::optional<std::string>> field("Sound file");
+  field.read(std::nullopt);
+  EXPECT_EQ(field.text(), "");
+  field.read(std::optional<std::string>("/sounds/message.ogg"));
+  EXPECT_EQ(field.text(), "/sounds/message.ogg");
+  field.read(std::nullopt);
+  EXPECT_EQ(field.text(), "");
+}
