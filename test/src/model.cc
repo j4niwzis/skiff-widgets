@@ -6,6 +6,7 @@ import skiff.model;
 import skiff.bind;
 import skiff.compose;
 import skiff.widgets.model;
+import skiff.widgets.motion;
 
 #include "gtest/gtest-macros.h"
 
@@ -175,4 +176,23 @@ TEST(WidgetsModel, APressIsAnEventItsScopeTakes) {
   EXPECT_EQ(m.look<Count>()->value, 2);
 }
 
+} // namespace
+
+namespace {
+TEST(WidgetsModel, DialogRefreshesLocalEditsWithoutChangingOuterModel) {
+  struct Draft { bool enabled = false; };
+  auto form = local<Draft>(column(bound<model::Field<&Draft::enabled>>(widgets::ToggleField<bool>{})));
+  widgets::Dialog<decltype(form)> dialog;
+  auto& shown = dialog.open(std::move(form));
+  Model outer;
+  bind::Binding<Model> binding;
+  binding.refresh(dialog, outer);
+  const auto revision = outer.revision();
+  ASSERT_TRUE(bind::press(dialog, outer, scene::Path{2, 0}));
+  binding.refresh(dialog, outer);
+  EXPECT_EQ(outer.revision(), revision);
+  EXPECT_TRUE(shown.fModel.root().enabled);
+  // The next press reverses the newly read value, not the original one.
+  EXPECT_FALSE(std::get<0>(shown.fParts).onPress().fChange.fValue);
+}
 } // namespace

@@ -476,6 +476,7 @@ using DialogPlace = spl::variant<dialog_place::centred, dialog_place::near_top>;
 template <class Content, class Dismiss = dismiss::closes>
 class Dialog : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Content>;
   Dialog() {
     fState.apply({.fill = true});
     // Over the window, all of it -- its sheet and what is on it.
