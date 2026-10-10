@@ -116,6 +116,31 @@ TEST(Dropdown, ButtonAndRowsRouteTheirOwnClicks) {
   EXPECT_FALSE(s.click(20.0f, 64.0f));
 }
 
+TEST(Dropdown, CompleteMenuSelectsOnPointerPressAfterMoving) {
+  int selected = -1;
+  auto choose = [&](std::size_t index) { selected = static_cast<int>(index); };
+  auto menu = widgets::ChoiceMenu(widgets::Theme{}, "Account",
+      std::vector<std::string>{"Sign in to an account", "Create a new account"}, 0, choose);
+  auto s = sceneOf({.width = 300.0f}, std::move(menu));
+  auto& moved = s->root().child;
+  const auto viewport = skia::SkRect::MakeWH(320.0f, 300.0f);
+  s->layoutIfNeeded(viewport);
+  const auto head = moved.parts.head.bounds();
+  EXPECT_TRUE(s->dispatchPointer(scene::pointer::down{head.centerX(), head.centerY()}));
+  EXPECT_TRUE(moved.open);
+  EXPECT_TRUE(s->dispatchPointer(scene::pointer::up{head.centerX(), head.centerY()}));
+  s->layoutIfNeeded(viewport);
+  const auto option = moved.parts.options[1].bounds();
+  EXPECT_TRUE(s->dispatchPointer(scene::pointer::down{option.centerX(), option.centerY()}));
+  EXPECT_EQ(selected, 1);
+  EXPECT_EQ(moved.current, 1u);
+  EXPECT_FALSE(moved.open);
+  EXPECT_TRUE(moved.parts.options[1].semantics().fSelected);
+  EXPECT_TRUE(s->dispatchPointer(scene::pointer::up{option.centerX(), option.centerY()}));
+  EXPECT_EQ(selected, 1);
+  EXPECT_EQ(s->capturedId(), 0u);
+}
+
 TEST(Button, PrimaryAndEnabledStateOwnDamageAndInput) {
   int clicks = 0;
   // Named by its action's type: a widget's public name is an alias, which a

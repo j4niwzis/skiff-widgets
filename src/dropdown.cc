@@ -4,6 +4,7 @@ import std;
 import skia;
 import skiff.paint;
 import skiff.scene;
+import skiff.compose;
 import skiff.nodes;
 export import skiff.widgets.theme;
 export import skiff.widgets.erased;
@@ -490,6 +491,117 @@ public:
   using Base::onSemantic;
   explicit ErasedDropdownList(OnChoose onChoose = {}) : internal::DropdownList<AnyCallFor<void(int), OnChoose>>(AnyCallFor<void(int), OnChoose>(std::move(onChoose))) {}
 };
+// A complete dropdown with no pointers from its rows back to itself. The
+// current value and expanded state travel with the node when a page moves.
+struct ChoiceMenuPresentation {
+  template <class Head, class Row>
+  void operator()(Head& head, std::vector<Row>& rows, const std::vector<std::string>& names,
+                  std::size_t current, bool open) const {
+    head.setValue(current < names.size() ? names[current] : std::string());
+    head.setOpen(open);
+    for (std::size_t i = 0; i < rows.size(); ++i) rows[i].setChosen(i == current);
+  }
+};
+template <class Choose, class Head = internal::DropdownButton<>, class Row = DropdownRow,
+          class Show = ChoiceMenuPresentation>
+struct ChoiceMenu : skiff::compose::Stacked {
+  Choose choose;
+  Show show{};
+  std::vector<std::string> names;
+  std::size_t current = 0, picked = 0;
+  bool open = false;
+  struct Parts {
+    Head head;
+    std::vector<Row> options;
+  } parts;
+  ChoiceMenu(Theme theme, std::string label, std::vector<std::string> options,
+             std::size_t selected, Choose action)
+      : Stacked(skiff::compose::vbox(2.0f, {.fillX = true, .autoSize = skiff::scene::axes::kY})),
+        choose(std::move(action)), names(std::move(options)), current(selected),
+        parts{.head = internal::DropdownButton<>(theme, label,
+            selected < names.size() ? names[selected] : std::string())} {
+    parts.head.apply({.fillX = true, .height = 36.0f});
+    parts.head.fLabelWidth = label.empty() ? 0.0f : std::min(180.0f, static_cast<float>(label.size()) * 7.5f + 12.0f);
+    const DropdownLook look{.fTheme = theme, .fRowHeight = 32.0f, .fFontSize = 14.0f};
+    parts.options = std::ranges::to<std::vector>(std::views::transform(names, [&](const std::string& name) {
+      return DropdownRow(name, look);
+    }));
+    read(selected);
+    show_options(false);
+  }
+  // Screens can supply composed head and row nodes, preserving their own
+  // appearance while sharing selection, pointer capture and model input.
+  ChoiceMenu(std::vector<std::string> options, std::size_t selected, Choose action,
+             Head head, std::vector<Row> rows, Show presentation)
+      : Stacked(skiff::compose::vbox(2.0f, {.fillX = true, .autoSize = skiff::scene::axes::kY})),
+        choose(std::move(action)), show(std::move(presentation)), names(std::move(options)), current(selected),
+        parts{std::move(head), std::move(rows)} {
+    read(selected);
+    show_options(false);
+  }
+  void read(std::size_t selected) {
+    current = selected;
+    show(parts.head, parts.options, names, current, open);
+  }
+  void show_options(bool shown) {
+    open = shown;
+    show(parts.head, parts.options, names, current, open);
+    for (auto& option : parts.options) option.setVisible(shown);
+    this->invalidateLayout();
+    this->markDamaged();
+  }
+  bool acceptsInput() const { return true; }
+  // Selection happens on press; the menu owns the release even after its
+  // chosen row has been hidden, so it cannot click the field underneath.
+  void press(const skiff::scene::pointer::down& event, skiff::scene::PointerReply& reply) {
+    if (event.button != 0 && event.button != 1) return;
+    if (parts.head.bounds().contains(event.x, event.y)) {
+      show_options(!open);
+    } else {
+      const auto found = std::ranges::find_if(parts.options, [&](const auto& option) {
+        return option.visible() && option.bounds().contains(event.x, event.y);
+      });
+      if (found == parts.options.end()) return;
+      picked = static_cast<std::size_t>(found - parts.options.begin());
+      read(picked);
+      show_options(false);
+      if constexpr (skiff::scene::Answering<Choose>) skiff::scene::pressLater(this->fState);
+      else std::invoke(choose, picked);
+    }
+    reply.capturePointer();
+    reply.handle();
+  }
+  using Node::onPointer;
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down& event,
+                 skiff::scene::PointerReply& reply) { press(event, reply); }
+  void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down& event,
+                 skiff::scene::PointerReply& reply) { press(event, reply); }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up&,
+                 skiff::scene::PointerReply& reply) { reply.releasePointer(); reply.handle(); }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel&,
+                 skiff::scene::PointerReply& reply) { reply.releasePointer(); reply.handle(); }
+  bool focusable() const { return true; }
+  bool takesFocusOnPress() const { return true; }
+  bool focusChangesAppearance() const { return true; }
+  using Node::onKey;
+  void onKey(skiff::scene::phase::bubble, const skiff::scene::key::down& key, skiff::scene::Reply& reply) {
+    if (key.key == skiff::scene::keys::kEscape && open) {
+      show_options(false);
+      reply.handle();
+    } else if (key.key == skiff::scene::keys::kEnter) {
+      show_options(!open);
+      reply.handle();
+    }
+  }
+  using Node::onSemantic;
+  void onSemantic(skiff::scene::phase::bubble, const skiff::scene::semantic_action::activate&,
+                  skiff::scene::Reply& reply) {
+    show_options(!open);
+    reply.handle();
+  }
+  auto onPress() requires skiff::scene::Answering<Choose> { return choose(picked); }
+};
+
 // The dropdown list: made for its action in a release build, over
 // an erased call otherwise.
 template <class OnChoose = skiff::scene::NoAction>
