@@ -549,3 +549,20 @@ TEST(TextBox, CopiedSourcesUsePlainOffsetsAcrossMultipleImagesAndNewlines) {
   EXPECT_EQ(field.atoms()[1].first, 6u);
   EXPECT_EQ(field.atoms()[1].last, 11u);
 }
+
+TEST(TextArea, InsertingRichFragmentPreservesDraftAtomsAndUndo) {
+  widgets::TextArea<> field;
+  field.insertAtom("\u2003", "mxc://draft/emoji", ":draft:", true);
+  field.select(0, 0);
+  field.insertFragment(scene::clipboardFragment("> \u2003\n\n", {{2, 5, "mxc://remote/emoji", ":neocat:", true}}));
+  EXPECT_EQ(field.plainText(), "> :neocat:\n\n:draft:");
+  ASSERT_EQ(field.atoms().size(), 2u);
+  EXPECT_EQ(field.atoms()[0].target, "mxc://remote/emoji");
+  EXPECT_EQ(field.atoms()[1].target, "mxc://draft/emoji");
+  scene::Reply reply;
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kZ,
+      scene::Modifiers{}.with<scene::modifier::control>()}, reply);
+  EXPECT_EQ(field.plainText(), ":draft:");
+  ASSERT_EQ(field.atoms().size(), 1u);
+  EXPECT_EQ(field.atoms()[0].target, "mxc://draft/emoji");
+}

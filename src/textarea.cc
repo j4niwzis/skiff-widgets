@@ -334,6 +334,22 @@ public:
   // Text put in at the caret, over what is selected, as if typed: what a
   // picker gives the field (an emoji, say).
   void insertText(std::string text) { this->insert(std::move(text)); }
+  // Insert copied text with its original inline picture sources. This is
+  // one edit, so undo restores both the previous text and its atoms.
+  void insertFragment(const scene::ClipboardFragment& fragment) {
+    this->breakRun();
+    if (fSingle || fMasked) {
+      this->insert(fragment.text);
+      return;
+    }
+    const std::size_t at = this->hasSelection() ? this->low() : fCaret;
+    this->insert(fragment.display);
+    for (const auto& atom : fragment.atoms)
+      if (atom.first <= atom.last && atom.last <= fragment.display.size())
+        fAtoms.push_back({at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}});
+    std::ranges::sort(fAtoms, {}, &Atom::first);
+    this->markDamaged();
+  }
   void setText(std::string text) {
     fUndo.clear();
     fRedo.clear();
@@ -696,13 +712,10 @@ public:
       const bool formatted = !shift && !fSingle && !fMasked && Copied() && Copied()->text == pasted;
       const auto rich = skiff::scene::clipboardRichText();
       const bool objects = !shift && !fSingle && !fMasked && rich && rich->text == pasted;
-      this->insert(objects ? rich->display : pasted);
-      if (objects) {
-        for (const auto& atom : rich->atoms)
-          fAtoms.push_back({at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}});
-        std::ranges::sort(fAtoms, {}, &Atom::first);
-        this->markDamaged();
-      }
+      if (objects)
+        this->insertFragment(*rich);
+      else
+        this->insert(std::move(pasted));
       if (formatted) {
         std::ranges::move(std::views::transform(Copied()->spans,
                                                 [at](Span one) {
