@@ -27,7 +27,7 @@ endif()
 
 project(
   skiff-widgets
-  VERSION 0.1
+  VERSION 0.1.1
   LANGUAGES CXX
 )
 

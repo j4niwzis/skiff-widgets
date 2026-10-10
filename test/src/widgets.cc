@@ -490,3 +490,62 @@ TEST(TextArea, PastingCopiedCustomEmojiKeepsAtomAndPlainPasteKeepsItsLabel) {
   scene::clipboardCandidate().reset();
   scene::clipboardRichText().reset();
 }
+
+TEST(TextBox, CopiedEmojiSourcesFollowEditsBesideTheirLabels) {
+  struct clear_clipboard {
+    ~clear_clipboard() {
+      scene::clipboardCandidate().reset();
+      scene::clipboardRichText().reset();
+      scene::hostWork().copied.reset();
+      scene::clipboardContents().clear();
+    }
+  } clear;
+  scene::clipboardCandidate() = scene::clipboardFragment("\u2003", {{0, 3, "mxc://remote/neocat", ":neocat:", true}});
+  scene::setClipboardText(":neocat:");
+  scene::clipboardContents() = ":neocat:";
+  widgets::TextBox<> field;
+  scene::Reply reply;
+  const auto control = scene::Modifiers{}.with<scene::modifier::control>();
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kV, control}, reply);
+  EXPECT_EQ(field.text(), ":neocat:");
+  ASSERT_EQ(field.atoms().size(), 1u);
+  EXPECT_EQ(field.atoms()[0].target, "mxc://remote/neocat");
+  EXPECT_EQ(field.atoms()[0].first, 0u);
+  EXPECT_EQ(field.atoms()[0].last, 8u);
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kHome}, reply);
+  field.onText(scene::phase::target{}, scene::text::commit{"hi "}, reply);
+  ASSERT_EQ(field.atoms().size(), 1u);
+  EXPECT_EQ(field.atoms()[0].first, 3u);
+  EXPECT_EQ(field.atoms()[0].last, 11u);
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kEnd}, reply);
+  field.onText(scene::phase::target{}, scene::text::commit{"!"}, reply);
+  EXPECT_EQ(field.text(), "hi :neocat:!");
+  ASSERT_EQ(field.atoms().size(), 1u);
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kLeft}, reply);
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kBackspace}, reply);
+  EXPECT_TRUE(field.atoms().empty());
+  field.setText("");
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kV,
+      control.with<scene::modifier::shift>()}, reply);
+  EXPECT_EQ(field.text(), ":neocat:");
+  EXPECT_TRUE(field.atoms().empty());
+}
+
+TEST(TextBox, CopiedSourcesUsePlainOffsetsAcrossMultipleImagesAndNewlines) {
+  struct clear_clipboard {
+    ~clear_clipboard() { scene::clipboardCandidate().reset(); scene::clipboardRichText().reset(); scene::hostWork().copied.reset(); }
+  } clear;
+  scene::clipboardCandidate() = scene::clipboardFragment("\u2003\r\n\u2003", {
+      {0, 3, "mxc://remote/one", ":one:", true}, {5, 8, "mxc://remote/two", ":two:", true}});
+  scene::setClipboardText(":one:\r\n:two:");
+  widgets::TextBox<> field;
+  scene::Reply reply;
+  field.onKey(scene::phase::target{}, scene::key::down{scene::keys::kV,
+      scene::Modifiers{}.with<scene::modifier::control>()}, reply);
+  EXPECT_EQ(field.text(), ":one: :two:");
+  ASSERT_EQ(field.atoms().size(), 2u);
+  EXPECT_EQ(field.atoms()[0].first, 0u);
+  EXPECT_EQ(field.atoms()[0].last, 5u);
+  EXPECT_EQ(field.atoms()[1].first, 6u);
+  EXPECT_EQ(field.atoms()[1].last, 11u);
+}

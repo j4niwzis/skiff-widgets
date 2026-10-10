@@ -66,11 +66,15 @@ public:
       return;
     }
     fText = std::move(text);
+    fAtoms.clear();
     fCaret = fText.size();
     fAll = false;
     this->markDamaged();
   }
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
+  // Copied inline images keep their source while this single-line field
+  // displays their plain label. Offsets are in text(), not placeholders.
+  [[nodiscard]] const std::vector<skiff::scene::ClipboardAtom>& atoms() const noexcept { return fAtoms; }
 
   // The caret is usually the only thing on a screen that changes without
   // being touched, so it marks the box when it flips and nothing else: the
@@ -124,7 +128,7 @@ public:
               skiff::scene::Reply &reply) {
     if (!typed.text.empty()) {
       this->takeAll();
-      fText.insert(fCaret, typed.text);
+      this->replaceText(fCaret, fCaret, typed.text);
       fCaret += typed.text.size();
       this->changed();
     }
@@ -153,11 +157,23 @@ public:
     // Nothing selected, Ctrl+C is not this field's: the window may copy
     // what is selected elsewhere.
     if (control && press.key == keys::kV) {
-      std::string pasted = skiff::scene::clipboardText();
-      std::ranges::replace(pasted, '\n', ' ');
-      std::erase(pasted, '\r');
+      const std::string copied = skiff::scene::clipboardText();
+      const auto rich = skiff::scene::clipboardRichText();
+      const std::string pasted = singleLine(copied);
       this->takeAll();
-      fText.insert(fCaret, pasted);
+      this->replaceText(fCaret, fCaret, pasted);
+      if (rich && rich->text == copied && !press.modifiers.has<skiff::scene::modifier::shift>()) {
+        std::ptrdiff_t shift = 0;
+        for (const auto& atom : rich->atoms) {
+          if (atom.first > atom.last || atom.last > rich->display.size()) continue;
+          const auto first = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(atom.first) + shift);
+          const auto label = singleLine(atom.plain);
+          const auto offset = singleLine(std::string_view(copied).substr(0, first)).size();
+          fAtoms.push_back({fCaret + offset, fCaret + offset + label.size(), atom.target, label, atom.picture});
+          shift += static_cast<std::ptrdiff_t>(atom.plain.size()) - static_cast<std::ptrdiff_t>(atom.last - atom.first);
+        }
+        std::ranges::sort(fAtoms, {}, &skiff::scene::ClipboardAtom::first);
+      }
       fCaret += pasted.size();
       this->changed();
       this->markDamaged();
@@ -174,6 +190,7 @@ public:
       if (!fAll || fMasked) {
         return;
       }
+      skiff::scene::clipboardCandidate() = skiff::scene::clipboardFragment(fText, fAtoms);
       skiff::scene::setClipboardText(fText);
       if (press.key == keys::kX) {
         this->takeAll();
@@ -199,7 +216,7 @@ public:
     if (press.key == keys::kBackspace) {
       if (fCaret > 0) {
         const std::size_t eraseFrom = previousCodepoint(fText, fCaret);
-        fText.erase(eraseFrom, fCaret - eraseFrom);
+        this->replaceText(eraseFrom, fCaret, {});
         fCaret = eraseFrom;
         this->changed();
         this->markDamaged();
@@ -208,7 +225,7 @@ public:
     } else if (press.key == keys::kDelete) {
       if (fCaret < fText.size()) {
         const std::size_t eraseTo = nextCodepoint(fText, fCaret);
-        fText.erase(fCaret, eraseTo - fCaret);
+        this->replaceText(fCaret, eraseTo, {});
         this->changed();
         this->markDamaged();
       }
@@ -331,6 +348,24 @@ public:
   OnChanged &onChanged() noexcept { return fOnChanged; }
 
 private:
+  static std::string singleLine(std::string_view text) {
+    std::string out(text);
+    std::ranges::replace(out, '\n', ' ');
+    std::erase(out, '\r');
+    return out;
+  }
+  void replaceText(std::size_t first, std::size_t last, std::string_view text) {
+    // Editing inside a label turns it into ordinary text. Edits beside it
+    // retain its identity and shift its offsets with the rest of the line.
+    std::erase_if(fAtoms, [&](const auto& atom) { return atom.first < last && atom.last > first; });
+    const auto shift = static_cast<std::ptrdiff_t>(text.size()) - static_cast<std::ptrdiff_t>(last - first);
+    for (auto& atom : fAtoms)
+      if (atom.first >= last) {
+        atom.first = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(atom.first) + shift);
+        atom.last = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(atom.last) + shift);
+      }
+    fText.replace(first, last - first, text);
+  }
   // All of it selected: taken out, the caret at the start.
   void takeAll() {
     if (!fAll) {
@@ -338,6 +373,7 @@ private:
     }
     fAll = false;
     fText.clear();
+    fAtoms.clear();
     fCaret = 0;
   }
   // What is drawn for some of the text: itself, or a dot per character.
@@ -401,6 +437,7 @@ public:
 
 private:
   std::string fText;
+  std::vector<skiff::scene::ClipboardAtom> fAtoms;
   std::string fComposition;
   std::size_t fCaret = 0;
   bool fAll = false;  // all of the text selected, by Ctrl+A
