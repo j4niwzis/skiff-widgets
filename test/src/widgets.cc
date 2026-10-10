@@ -141,6 +141,19 @@ TEST(Dropdown, CompleteMenuSelectsOnPointerPressAfterMoving) {
   EXPECT_EQ(s->capturedId(), 0u);
 }
 
+TEST(Dropdown, LegacyClickCannotReplayAChoiceWhenOpeningTheHeader) {
+  struct choose {
+    struct Answer { std::size_t index; };
+    Answer operator()(std::size_t index) const { return {index}; }
+  };
+  auto menu = widgets::ChoiceMenu(widgets::Theme{}, "Room events",
+      std::vector<std::string>{"As above", "All events", "Messages only", "Custom"}, 1, choose{});
+  scene::hostWork().pressedNow = nullptr;
+  EXPECT_FALSE(menu.onClick(10.0f, 10.0f));
+  EXPECT_EQ(scene::hostWork().pressedNow, nullptr);
+  EXPECT_EQ(menu.current, 1u);
+}
+
 TEST(Button, PrimaryAndEnabledStateOwnDamageAndInput) {
   int clicks = 0;
   // Named by its action's type: a widget's public name is an alias, which a

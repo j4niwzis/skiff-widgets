@@ -568,9 +568,14 @@ struct ChoiceMenu : skiff::compose::Stacked {
       if constexpr (skiff::scene::Answering<Choose>) skiff::scene::pressLater(this->fState);
       else std::invoke(choose, picked);
     }
+    // A composed leaf can request the scene's legacy click fallback.
+    // This menu already handled the press; replaying onClick would apply
+    // the last picked option again even when only opening the header.
+    reply.fClickAbove.reset();
     reply.capturePointer();
     reply.handle();
   }
+  bool onClick(float, float) { return false; }
   using Node::onPointer;
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down& event,
                  skiff::scene::PointerReply& reply) { press(event, reply); }
