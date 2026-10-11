@@ -452,14 +452,38 @@ RangeSlider() -> RangeSlider<>;
 // A pill that slides its knob from one end to the other. The state is set
 // from outside; what is animated here is only the knob catching up with it.
 namespace internal {
-template <class OnToggle = skiff::scene::NoAction>
+// Presentation is independent of toggle input and state. Screens can choose
+// a checkbox without copying the switch's keyboard or accessibility handling.
+struct SwitchLook {
+  static constexpr float width = 40.0f, height = 22.0f;
+  template <class Toggle> static void draw(Toggle& widget, const skiff::paint::Painter& p, float alpha) {
+    const auto& bounds = widget.fState.fBounds;
+    p.fillRounded(bounds, bounds.height() * 0.5f,
+                  widget.mixedColour(widget.fTheme.fSurface, widget.fTheme.fAccent), alpha);
+    p.circle(bounds.fLeft + widget.fKnobInset +
+                 (bounds.width() - widget.fKnobInset * 2.0f) * widget.position(),
+             bounds.centerY(), widget.fKnobRadius, widget.fTheme.fText, alpha);
+    if (widget.showsFocus())
+      p.strokeRounded(bounds, bounds.height() * 0.5f, widget.fTheme.fAccent, 1.5f, alpha);
+  }
+};
+struct CheckboxLook {
+  static constexpr float width = 22.0f, height = 22.0f;
+  template <class Toggle> static void draw(Toggle& widget, const skiff::paint::Painter& p, float alpha) {
+    const auto& bounds = widget.fState.fBounds;
+    p.fillRounded(bounds, 3.0f, widget.on() ? widget.fTheme.fAccent : widget.fTheme.fSurface, alpha);
+    p.strokeRounded(bounds, 3.0f, widget.showsFocus() ? widget.fTheme.fAccent : widget.fTheme.fText, 1.0f, alpha);
+    if (widget.on()) p.textCentredIn(bounds, "✓", 17.0f, widget.fTheme.fOnAccent, alpha);
+  }
+};
+template <class OnToggle = skiff::scene::NoAction, class Look = SwitchLook>
 class Toggle : public skiff::scene::Node {
 public:
   // Made in a theme: the one it is given, not one of the library's.
   Toggle(Theme theme, OnToggle onToggle) : Toggle(std::move(onToggle)) { fTheme = std::move(theme); }
   explicit Toggle(OnToggle onToggle = {}) : fOnToggle(std::move(onToggle)) {
-    fState.fWidth = 40.0f;
-    fState.fHeight = 22.0f;
+    fState.fWidth = Look::width;
+    fState.fHeight = Look::height;
   }
 
   void setTheme(Theme value) {
@@ -515,15 +539,12 @@ public:
       return;
     }
     const skiff::paint::Painter p(canvas, *font);
-    p.fillRounded(fState.fBounds, fState.fBounds.height() * 0.5f,
-                  mix(fTheme.fSurface, fTheme.fAccent, fKnob), alpha);
-    p.circle(fState.fBounds.fLeft + fKnobInset +
-                 (fState.fBounds.width() - fKnobInset * 2.0f) * fKnob,
-             fState.fBounds.centerY(), fKnobRadius, fTheme.fText, alpha);
-    if (this->showsFocus()) {
-      p.strokeRounded(fState.fBounds, fState.fBounds.height() * 0.5f, fTheme.fAccent, 1.5f,
-                      alpha);
-    }
+    Look::draw(*this, p, alpha);
+  }
+
+  [[nodiscard]] float position() const noexcept { return fKnob; }
+  [[nodiscard]] skia::SkColor mixedColour(skia::SkColor a, skia::SkColor b) const {
+    return mix(a, b, fKnob);
   }
 
   [[nodiscard]] bool acceptsInput() const { return skiff::scene::acts(fOnToggle); }
