@@ -65,6 +65,9 @@ struct BlockLook {
   // Not laid out at all: no line, no room, no caret in it -- a code block's
   // closing fence, which a message does not show either.
   bool collapsed = false;
+  // A visible decoration with no insertion point, such as a code fence.
+  // Hidden prefixes alone still leave a caret after them on empty lines.
+  bool caret = true;
 };
 // A line in view, for drawBehind: its paragraph's start, where it is drawn.
 struct ShownLine {
@@ -937,17 +940,17 @@ private:
     }
     // Never before or inside a paragraph's hidden marks: to after them, or
     // -- going back from them -- to the end of the line before. A paragraph
-    // all marks, or not laid out, has no place for the caret at all: it goes
+    // marked as a decoration, or not laid out, has no caret: it goes
     // on past it, to the next paragraph or back to the one before -- the
     // caret stood still on a code block's first line, sent back into its
     // hidden fence each time it left.
     const std::size_t start = this->lineStartOf(offset);
     const BlockLook look = this->lookAt(start);
-    const std::size_t marks = start + look.hidden;
     const std::size_t newline = fText.find('\n', start);
     const std::size_t end = newline == std::string::npos ? fText.size() : newline;
+    const std::size_t marks = std::min(start + look.hidden, end);
     const bool back = forward.has_value() && !*forward;
-    if (look.collapsed || (look.hidden > 0 && marks >= end)) {
+    if (look.collapsed || !look.caret) {
       if (back && start > 0)
         return this->outOfAtoms(start - 1, false);
       if (newline != std::string::npos)
@@ -1357,9 +1360,14 @@ private:
     return this->offsetIn(p, line, x - this->textBox().fLeft + this->scrollX(p));
   }
   [[nodiscard]] std::size_t offsetIn(const skiff::paint::Painter &p, const Line &line, float x) const {
-    std::size_t best = line.fStart;
+    // Hidden marks share the visible start's x coordinate. Searching them
+    // first chose a mark, so Up skipped empty quoted lines as if moving
+    // backwards through their prefix. Search only insertion points.
+    const std::size_t start = std::min(line.fEnd, std::max(line.fStart,
+        this->lineStartOf(line.fStart) + this->lookAt(line.fStart).hidden));
+    std::size_t best = start;
     float bestDistance = std::numeric_limits<float>::max();
-    for (std::size_t at = line.fStart;; at = next(fText, at)) {
+    for (std::size_t at = start;; at = next(fText, at)) {
       const float distance = std::abs(this->xAt(p, line, at) - x);
       if (distance < bestDistance) {
         bestDistance = distance;
