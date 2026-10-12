@@ -421,13 +421,25 @@ private:
   {
     skiff::scene::pressLater(fState);
   }
-  void changed() { std::invoke(fOnChanged, std::string_view(fText)); }
+  void changed() { told(fOnChanged, fText, fAtoms); }
+
+  // What it was changed to, given to its action: the text, and the pictures
+  // in it where the action takes them too.
+  template <class Act>
+    requires std::invocable<Act &, std::string_view, const std::vector<skiff::scene::ClipboardAtom> &>
+  static auto told(Act &act, std::string_view text, const std::vector<skiff::scene::ClipboardAtom> &atoms) {
+    return std::invoke(act, text, atoms);
+  }
+  template <class Act>
+  static auto told(Act &act, std::string_view text, const std::vector<skiff::scene::ClipboardAtom> &) {
+    return std::invoke(act, text);
+  }
 
 public:
   auto onPress()
     requires skiff::scene::Answering<OnChanged>
   {
-    return std::invoke(fOnChanged, std::string_view(fText));
+    return told(fOnChanged, fText, fAtoms);
   }
 
 private:

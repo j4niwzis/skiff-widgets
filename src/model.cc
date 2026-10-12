@@ -52,6 +52,27 @@ private:
   template <class Wrapped> static const std::string &textOf(const Wrapped &value) { return value.value; }
 };
 
+// A text box showing a part that keeps its pictures with its text -- a
+// search a pasted custom emoji was typed into, say: T made of the text and
+// the pictures in it (T{text, atoms}), set as it is typed into.
+template <class T> struct TypedWithPictures {
+  using Answer = skiff::bind::Own<skiff::model::SetTo<T>>;
+  Answer operator()(std::string_view text, const std::vector<skiff::scene::ClipboardAtom> &atoms) const {
+    return skiff::bind::own(skiff::model::setTo(T{std::string(text), atoms}));
+  }
+};
+template <class T> class PicturedTextField : public internal::TextBox<TypedWithPictures<T>> {
+public:
+  PicturedTextField(Theme theme, std::string placeholder)
+      : internal::TextBox<TypedWithPictures<T>>(std::move(theme), std::move(placeholder), TypedWithPictures<T>{}) {}
+  // Shown again only where its text is another: what was typed keeps its
+  // pictures.
+  void read(const T &now) {
+    if (now.text != this->text())
+      this->setText(now.text);
+  }
+};
+
 // What a model widget's own action is: a press said, the widget's own
 // onPress() making the change -- from what it shows.
 struct Answers {
