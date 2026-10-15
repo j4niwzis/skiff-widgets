@@ -289,6 +289,11 @@ namespace dismiss {
 struct closes {};
 struct pressed {};
 } // namespace dismiss
+// A way of being dismissed that answers what the program makes of it -- a
+// part of its model set so: a type with a static answer(), what a press off
+// it or Esc is answered with, as the press is delivered.
+template <class Dismiss>
+concept AnswersDismissal = requires { Dismiss::answer(); };
 
 // A navigation drawer: a panel pulled out from the left edge over a base,
 // with the rest of the base dimmed under a scrim. A click on the scrim, or
@@ -424,6 +429,22 @@ public:
 private:
   void dismissed(dismiss::closes) { this->close(); }
   void dismissed(dismiss::pressed) { skiff::scene::pressLater(fState); }
+  template <AnswersDismissal D> void dismissed(D) { skiff::scene::pressLater(fState); }
+
+public:
+  // Out or in, as the model it is bound to says: slid there where it moves.
+  void read(bool open) {
+    if (open != fOpen)
+      this->setOpen(open);
+  }
+  // Pushed back: what its Dismiss answers.
+  auto onPress()
+    requires AnswersDismissal<Dismiss>
+  {
+    return Dismiss::answer();
+  }
+
+private:
 
   std::optional<skia::SkPoint> fSwipeFrom;
   // What covers the base: it takes the pointer, so a press off the panel
@@ -634,6 +655,17 @@ public:
 private:
   void dismissed(dismiss::closes) { this->close(); }
   void dismissed(dismiss::pressed) { skiff::scene::pressLater(fState); }
+  template <AnswersDismissal D> void dismissed(D) { skiff::scene::pressLater(fState); }
+
+public:
+  // Pressed off, or Esc: what its Dismiss answers.
+  auto onPress()
+    requires AnswersDismissal<Dismiss>
+  {
+    return Dismiss::answer();
+  }
+
+private:
 
   class Scrim : public skiff::nodes::Box<> {
   public:
@@ -663,6 +695,35 @@ private:
   DialogPlace fPlace = dialog_place::centred{};
   bool fDismissable = true;
   bool fClosing = false;
+};
+
+// A container -- a dialog, a slide-over -- up while the part of a model it
+// reads holds facts, and going as it goes where the part holds none. What
+// it holds is Make's (a type the program gives it, holding what it needs):
+// made from the facts as it opens -- make(facts) -- and kept while
+// make.stands(up, facts) says what is up still stands for them (a page
+// that reads them itself, the same room's settings), made again where not;
+// before either, make.put(container, facts) puts it as they say (its size,
+// whether a press off it closes it).
+template <class Container, class Facts, class Make>
+class Shown : public Container {
+public:
+  template <class... Args>
+  explicit Shown(Make make, Args &&...args) : Container(std::forward<Args>(args)...), fMake(std::move(make)) {}
+  void read(const std::optional<Facts> &now) {
+    if (!now) {
+      if (this->shown())
+        this->close();
+      return;
+    }
+    fMake.put(static_cast<Container &>(*this), *now);
+    if (auto *up = this->shown(); up && fMake.stands(*up, *now))
+      return;
+    this->open(fMake.make(*now));
+  }
+
+private:
+  Make fMake;
 };
 
 } // namespace skiff::widgets
