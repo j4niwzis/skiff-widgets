@@ -216,16 +216,16 @@ template <class Format>
 // The spans by offsets in plain(): what is sent with it.
 template <class Format>
 [[nodiscard]] std::vector<TextSpan<Format>> plainSpans(const TextDocument<Format> &doc) {
-  return std::ranges::to<std::vector>(std::views::transform(doc.spans, [&](const TextSpan<Format> &one) {
+  return doc.spans | std::views::transform([&](const TextSpan<Format> &one) {
            return TextSpan<Format>{plainOffset(doc, one.first), plainOffset(doc, one.last), one.format};
-         }));
+         }) | std::ranges::to<std::vector>();
 }
 // The spans over [from, to), cut to it, by offsets from `from`.
 template <class Format>
 [[nodiscard]] std::vector<TextSpan<Format>> spansIn(const TextDocument<Format> &doc, std::size_t from, std::size_t to) {
-  return std::ranges::to<std::vector>(std::views::transform(std::views::filter(doc.spans, [&](const TextSpan<Format> &one) { return one.first < to && one.last > from; }), [&](const TextSpan<Format> &one) {
+  return doc.spans | std::views::filter([&](const TextSpan<Format> &one) { return one.first < to && one.last > from; }) | std::views::transform([&](const TextSpan<Format> &one) {
            return TextSpan<Format>{std::max(one.first, from) - from, std::min(one.last, to) - from, one.format};
-         }));
+         }) | std::ranges::to<std::vector>();
 }
 // Spans moved for text put in at `at`: on past it, or longer where it went
 // into one -- at a span's end too, where the format grows.
@@ -322,9 +322,9 @@ template <class Format, class Grows>
 void insertFragment(TextDocument<Format> &doc, const skiff::scene::ClipboardFragment &fragment, const Grows &grows) {
   const std::size_t at = doc.selection() ? doc.low() : doc.caret;
   insert(doc, fragment.display, grows);
-  std::ranges::move(std::views::transform(std::views::filter(fragment.atoms, [&](const auto &atom) {
+  std::ranges::move(fragment.atoms | std::views::filter([&](const auto &atom) {
                       return atom.first <= atom.last && atom.last <= fragment.display.size();
-                    }), [&](const auto &atom) {
+                    }) | std::views::transform([&](const auto &atom) {
                       return TextAtom{at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}};
                     }),
                     std::back_inserter(doc.atoms));
@@ -919,8 +919,7 @@ public:
       else
         this->insert(std::move(pasted));
       if (formatted) {
-        std::ranges::move(std::views::transform(Copied()->spans,
-                                                [at](Span one) {
+        std::ranges::move(Copied()->spans | std::views::transform([at](Span one) {
                                                   one.first += at;
                                                   one.last += at;
                                                   return one;
@@ -1257,10 +1256,10 @@ private:
     }
     std::ranges::sort(cuts);
     cuts.erase(std::ranges::unique(cuts).begin(), cuts.end());
-    return std::ranges::to<std::vector<Run>>(std::views::transform(std::views::pairwise(cuts), [this](const auto &pair) {
+    return cuts | std::views::pairwise | std::views::transform([this](const auto &pair) {
              const auto &[a, b] = pair;
              return Run{a, b, this->lookOf(a)};
-           }));
+           }) | std::ranges::to<std::vector<Run>>();
   }
   // How the character at an offset looks: all its spans' looks.
   [[nodiscard]] RunLook lookOf(std::size_t at) const {

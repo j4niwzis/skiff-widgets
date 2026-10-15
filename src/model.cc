@@ -292,7 +292,7 @@ public:
   using Choice = std::pair<std::string, T>;
   explicit ChoiceList(std::vector<Choice> choices)
       : internal::DropdownList<Answers>(Answers{}), fChoices(std::move(choices)) {
-    this->setOptions(std::ranges::to<std::vector>(std::views::transform(fChoices, &Choice::first)));
+    this->setOptions(fChoices | std::views::transform(&Choice::first) | std::ranges::to<std::vector>());
   }
 
   void read(const T &now) {

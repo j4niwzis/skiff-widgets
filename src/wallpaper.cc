@@ -213,7 +213,7 @@ template <std::ranges::forward_range Backdrops>
 void drawBackdrops(skia::SkCanvas *canvas, Backdrops &&all, float blur, const BackdropShape &shape, float alpha) {
   const skia::SkRect on = canvas->getTotalMatrix().mapRect(backdropBounds(shape));
   const std::uint64_t now = skiff::scene::work::frameNumber();
-  auto under = std::views::filter(all, [&](const Backdrop &one) {
+  auto under = all | std::views::filter([&](const Backdrop &one) {
                  return one.frame == now && skia::SkRect::Intersects(one.device, on);
                });
   const auto hiding = std::ranges::find_last_if(
@@ -360,12 +360,12 @@ struct AnyBackdropOut {
     const float theta = swirl * swirl * 0.8f * 8.0f;
     const float px = std::clamp(0.5f + centreX * std::cos(theta) - centreY * std::sin(theta), 0.0f, 1.0f);
     const float py = std::clamp(0.5f + centreX * std::sin(theta) + centreY * std::cos(theta), 0.0f, 1.0f);
-    const auto weights = std::ranges::to<std::vector>(std::views::transform(std::views::iota(std::size_t{0}, std::min(colours.size(), kPoints.size())), [&](std::size_t i) {
+    const auto weights = std::views::iota(std::size_t{0}, std::min(colours.size(), kPoints.size())) | std::views::transform([&](std::size_t i) {
                            const float dx = px - kPoints[i].first, dy = py - kPoints[i].second;
                            const float near = std::max(0.0f, 0.9f - std::sqrt(dx * dx + dy * dy));
                            return std::pair{i, near * near * near * near};
-                         }));
-    const float sum = std::ranges::fold_left(std::views::values(weights), 0.0f, std::plus{});
+                         }) | std::ranges::to<std::vector>();
+    const float sum = std::ranges::fold_left(weights | std::views::values, 0.0f, std::plus{});
     const auto mixed = [&](int shift) {
       return sum <= 0.0f ? channel(colours.front(), shift)
                          : std::ranges::fold_left(weights, 0.0f, [&](float so_far, const auto &one) {
