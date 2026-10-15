@@ -193,6 +193,7 @@ public:
   template <class... Args> Over &open(Args &&...args) {
     SlideLayer<Over> &made =
         fLayers.emplace_back(fSheetColour, std::forward<Args>(args)...);
+    skiff::scene::work::subtreeMade() = true;
     made.fSlide.jump(0.0f);
     made.fSlide.setTarget(1.0f);
     this->invalidateLayout();
@@ -600,6 +601,7 @@ public:
   template <class... Args> Content &open(Args &&...args) {
     const bool up = this->shown() != nullptr;
     fContent.emplace(std::forward<Args>(args)...);
+    skiff::scene::work::subtreeMade() = true;
     fClosing = false;
     if (!up) {
       fFade.jump(0.0f);
