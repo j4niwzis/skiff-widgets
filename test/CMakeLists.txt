@@ -32,7 +32,7 @@ if(NOT TARGET skiff::widgets)
   CPMAddPackage(NAME skiff_widgets SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 endif()
 
-add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets.cc)
+add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/motion.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   gtest
   gtest_main

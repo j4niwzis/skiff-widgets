@@ -38,6 +38,13 @@ public:
   [[nodiscard]] const Child &child() const noexcept { return fChild; }
   [[nodiscard]] bool isOpen() const noexcept { return fOpen; }
 
+  // The first model value sets the initial state without an entrance
+  // animation; later changes fold the same child instead of remaking it.
+  void read(bool open) {
+    if (!std::exchange(fRead, true)) setOpenNow(open);
+    else if (open != fOpen) setOpen(open);
+  }
+
   // Open or shut, eased.
   void setOpen(bool open) {
     fOpen = open;
@@ -92,12 +99,14 @@ private:
 
   Child fChild;
   skiff::paint::Eased fUnfold{0.0f, 70.0f, skiff::paint::movement::subtle{}};
-  bool fOpen = false;
+  bool fOpen = false, fRead = false;
   // The child's height, as its last layout found it, and the one the last
   // measure() used.
   float fChildHeight = 0.0f;
   float fUsedHeight = 0.0f;
 };
+
+template <class Child> Collapsible(Child) -> Collapsible<Child>;
 
 // One panel of a SlideOver, on a sheet of its own: it takes every press on
 // it, so nothing under it can be reached through it.
