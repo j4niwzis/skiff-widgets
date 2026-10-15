@@ -196,6 +196,12 @@ public:
     made.fSlide.jump(0.0f);
     made.fSlide.setTarget(1.0f);
     this->invalidateLayout();
+    // The base told it is about to be covered whole, where it cares (a
+    // drawer, whose close waits for that); covered at once where nothing
+    // slides.
+    if constexpr (requires(Base &base) { base.coverComing(); })
+      fBase.coverComing();
+    this->coverIfIn();
     return made.fOver;
   }
   // The top panel slides out, and the one under it is up again.
@@ -258,6 +264,7 @@ public:
     }
     if (moved) {
       this->invalidateLayout();
+      this->coverIfIn();
     }
     // Those slid all the way out, gone with the frame that ended them.
     this->dropClosed();
@@ -277,6 +284,15 @@ public:
   }
 
 private:
+  // A panel all the way in: the base, covered whole, told so where it cares.
+  void coverIfIn() {
+    if constexpr (requires(Base &base) { base.covered(); })
+      if (std::ranges::any_of(fLayers, [](const SlideLayer<Over> &layer) {
+            return !layer.fClosing && !layer.fSlide.moving() && layer.fSlide.value() >= 1.0f;
+          }))
+        fBase.covered();
+  }
+
   Base fBase;
   // A deque: a panel is made in place and never moved.
   std::deque<SlideLayer<Over>> fLayers;
@@ -343,10 +359,35 @@ public:
     this->invalidateLayout();
   }
   void setOpen(bool open) {
+    // Pushed back while something slides in over it all: left where it is
+    // till that covers it, and gone then at once -- not two things moving.
+    if (!open && fCoverComing) {
+      fOpen = false;
+      fSlide.jump(fSlide.value());
+      fCloseWhenCovered = true;
+      return;
+    }
+    fCloseWhenCovered = false;
     fOpen = open;
     fSlide.setTarget(open ? 1.0f : 0.0f);
     this->showWhatMoves();
     this->invalidateLayout();
+  }
+  // Something sliding in over it whole (a page over the drawer and the
+  // base, told by the slide-over it is the base of): a push back asked for
+  // meanwhile waits for it; one under way stops where it is, to wait too.
+  void coverComing() {
+    fCoverComing = true;
+    if (!fOpen && fSlide.moving()) {
+      fSlide.jump(fSlide.value());
+      fCloseWhenCovered = true;
+    }
+  }
+  // Covered: what waited, done at once, unseen.
+  void covered() {
+    fCoverComing = false;
+    if (std::exchange(fCloseWhenCovered, false))
+      this->closeNow();
   }
 
   void forEachChild(auto &&f) {
@@ -486,6 +527,9 @@ private:
   skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
   float fWidth = 300.0f;
   bool fOpen = false;
+  // A cover sliding in over it, and a push back waiting for it.
+  bool fCoverComing = false;
+  bool fCloseWhenCovered = false;
 };
 
 // Where a dialog's box stands: in the middle of the window; or near its top,
