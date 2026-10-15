@@ -317,6 +317,20 @@ void insertAtom(TextDocument<Format> &doc, std::string shown, std::string target
   doc.atoms.push_back({doc.caret - size, doc.caret, std::move(target), std::move(plain), picture, std::move(unmarked)});
   std::ranges::sort(doc.atoms, {}, &TextAtom::first);
 }
+// What was copied put in at the caret, over what is selected: its text as
+// it was shown, its pictures and pills atoms again where they were.
+template <class Format, class Grows>
+void insertFragment(TextDocument<Format> &doc, const skiff::scene::ClipboardFragment &fragment, const Grows &grows) {
+  const std::size_t at = doc.selection() ? doc.low() : doc.caret;
+  insert(doc, fragment.display, grows);
+  std::ranges::move(fragment.atoms | std::views::filter([&](const auto &atom) {
+                      return atom.first <= atom.last && atom.last <= fragment.display.size();
+                    }) | std::views::transform([&](const auto &atom) {
+                      return TextAtom{at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}};
+                    }),
+                    std::back_inserter(doc.atoms));
+  std::ranges::sort(doc.atoms, {}, &TextAtom::first);
+}
 // What is between two offsets selected.
 template <class Format>
 void select(TextDocument<Format> &doc, std::size_t from, std::size_t to) {
@@ -549,13 +563,10 @@ public:
       this->insert(fragment.text);
       return;
     }
-    const std::size_t at = this->hasSelection() ? this->low() : fDoc.caret;
-    this->insert(fragment.display);
-    for (const auto& atom : fragment.atoms)
-      if (atom.first <= atom.last && atom.last <= fragment.display.size())
-        fDoc.atoms.push_back({at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}});
-    std::ranges::sort(fDoc.atoms, {}, &Atom::first);
-    this->markDamaged();
+    // One step of undo for the text and its atoms both.
+    this->remember(false);
+    document::insertFragment(fDoc, fragment, this->grows());
+    this->edited();
   }
   void setText(std::string text) {
     fUndo.clear();
