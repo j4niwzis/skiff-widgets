@@ -216,31 +216,27 @@ template <class Format>
 // The spans by offsets in plain(): what is sent with it.
 template <class Format>
 [[nodiscard]] std::vector<TextSpan<Format>> plainSpans(const TextDocument<Format> &doc) {
-  return doc.spans | std::views::transform([&](const TextSpan<Format> &one) {
+  return std::ranges::to<std::vector>(std::views::transform(doc.spans, [&](const TextSpan<Format> &one) {
            return TextSpan<Format>{plainOffset(doc, one.first), plainOffset(doc, one.last), one.format};
-         }) |
-         std::ranges::to<std::vector>();
+         }));
 }
 // The spans over [from, to), cut to it, by offsets from `from`.
 template <class Format>
 [[nodiscard]] std::vector<TextSpan<Format>> spansIn(const TextDocument<Format> &doc, std::size_t from, std::size_t to) {
-  return doc.spans | std::views::filter([&](const TextSpan<Format> &one) { return one.first < to && one.last > from; }) |
-         std::views::transform([&](const TextSpan<Format> &one) {
+  return std::ranges::to<std::vector>(std::views::transform(std::views::filter(doc.spans, [&](const TextSpan<Format> &one) { return one.first < to && one.last > from; }), [&](const TextSpan<Format> &one) {
            return TextSpan<Format>{std::max(one.first, from) - from, std::min(one.last, to) - from, one.format};
-         }) |
-         std::ranges::to<std::vector>();
+         }));
 }
 // Spans moved for text put in at `at`: on past it, or longer where it went
 // into one -- at a span's end too, where the format grows.
 template <class Format, class Grows>
 void spansInserted(TextDocument<Format> &doc, std::size_t at, std::size_t size, const Grows &grows) {
-  std::ranges::for_each(doc.spans, [&](TextSpan<Format> &one) {
-    if (one.first >= at) {
-      one.first += size;
-      one.last += size;
-    } else if (one.last > at || (one.last == at && grows(one.format))) {
-      one.last += size;
-    }
+  std::ranges::transform(doc.spans, doc.spans.begin(), [&](TextSpan<Format> one) {
+    if (one.first >= at)
+      return TextSpan<Format>{one.first + size, one.last + size, std::move(one.format)};
+    if (one.last > at || (one.last == at && grows(one.format)))
+      return TextSpan<Format>{one.first, one.last + size, std::move(one.format)};
+    return one;
   });
 }
 // Spans moved for [from, to) taken out: what was in it gone from them, and
@@ -248,18 +244,17 @@ void spansInserted(TextDocument<Format> &doc, std::size_t at, std::size_t size, 
 template <class Format>
 void spansErased(TextDocument<Format> &doc, std::size_t from, std::size_t to) {
   const auto moved = [&](std::size_t at) { return at <= from ? at : at >= to ? at - (to - from) : from; };
-  std::ranges::for_each(doc.spans, [&](TextSpan<Format> &one) {
-    one.first = moved(one.first);
-    one.last = moved(one.last);
+  std::ranges::transform(doc.spans, doc.spans.begin(), [&](TextSpan<Format> one) {
+    return TextSpan<Format>{moved(one.first), moved(one.last), std::move(one.format)};
   });
   std::erase_if(doc.spans, [](const TextSpan<Format> &one) { return one.first >= one.last; });
 }
 // Spans kept within the text: cut to its end, those left empty dropped.
 template <class Format>
 void keepSpansIn(TextDocument<Format> &doc) {
-  std::ranges::for_each(doc.spans, [&](TextSpan<Format> &one) {
-    one.last = std::min(one.last, doc.text.size());
-    one.first = std::min(one.first, one.last);
+  std::ranges::transform(doc.spans, doc.spans.begin(), [&](TextSpan<Format> one) {
+    const std::size_t last = std::min(one.last, doc.text.size());
+    return TextSpan<Format>{std::min(one.first, last), last, std::move(one.format)};
   });
   std::erase_if(doc.spans, [](const TextSpan<Format> &one) { return one.first >= one.last; });
 }
@@ -269,9 +264,13 @@ template <class Format, class Grows>
 void shiftAtoms(TextDocument<Format> &doc, std::size_t from, std::ptrdiff_t by, const Grows &grows) {
   if (by > 0)
     spansInserted(doc, from, static_cast<std::size_t>(by), grows);
-  std::ranges::for_each(doc.atoms | std::views::filter([&](const TextAtom &one) { return one.first >= from; }), [&](TextAtom &one) {
-    one.first = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.first) + by);
-    one.last = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.last) + by);
+  const auto moved = [&](std::size_t at) { return static_cast<std::size_t>(static_cast<std::ptrdiff_t>(at) + by); };
+  std::ranges::transform(doc.atoms, doc.atoms.begin(), [&](TextAtom one) {
+    if (one.first >= from) {
+      one.first = moved(one.first);
+      one.last = moved(one.last);
+    }
+    return one;
   });
 }
 // Text taken out: atoms it cuts into gone, those after it moved back.
@@ -323,9 +322,9 @@ template <class Format, class Grows>
 void insertFragment(TextDocument<Format> &doc, const skiff::scene::ClipboardFragment &fragment, const Grows &grows) {
   const std::size_t at = doc.selection() ? doc.low() : doc.caret;
   insert(doc, fragment.display, grows);
-  std::ranges::move(fragment.atoms | std::views::filter([&](const auto &atom) {
+  std::ranges::move(std::views::transform(std::views::filter(fragment.atoms, [&](const auto &atom) {
                       return atom.first <= atom.last && atom.last <= fragment.display.size();
-                    }) | std::views::transform([&](const auto &atom) {
+                    }), [&](const auto &atom) {
                       return TextAtom{at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}};
                     }),
                     std::back_inserter(doc.atoms));
@@ -1259,9 +1258,9 @@ private:
     std::ranges::sort(cuts);
     cuts.erase(std::ranges::unique(cuts).begin(), cuts.end());
     return std::ranges::to<std::vector<Run>>(std::views::transform(std::views::pairwise(cuts), [this](const auto &pair) {
-      const auto &[a, b] = pair;
-      return Run{a, b, this->lookOf(a)};
-    }));
+             const auto &[a, b] = pair;
+             return Run{a, b, this->lookOf(a)};
+           }));
   }
   // How the character at an offset looks: all its spans' looks.
   [[nodiscard]] RunLook lookOf(std::size_t at) const {

@@ -218,8 +218,8 @@ void drawBackdrops(skia::SkCanvas *canvas, Backdrops &&all, float blur, const Ba
                });
   const auto hiding = std::ranges::find_last_if(
       under, [&](const Backdrop &one) { return one.opaque && one.device.contains(on.makeInset(0.5f, 0.5f)); });
-  std::ranges::for_each(hiding.empty() ? under.begin() : hiding.begin(), under.end(),
-                        [&](const Backdrop &one) { drawBackdrop(canvas, one, blur, shape, alpha); });
+  for (const Backdrop &one : std::ranges::subrange(hiding.empty() ? under.begin() : hiding.begin(), under.end()))
+    drawBackdrop(canvas, one, blur, shape, alpha);
 }
 // Where backdrops come from: a value called as it is drawn, as an Image's
 // source is -- the program's, giving those its wallpapers offered, the
@@ -375,13 +375,12 @@ struct AnyBackdropOut {
     return skia::colorSetARGB(255, static_cast<unsigned>(std::lround(mixed(16))), static_cast<unsigned>(std::lround(mixed(8))),
                               static_cast<unsigned>(std::lround(mixed(0))));
   };
-  std::ranges::for_each(std::views::iota(0, kSide), [&](int y) {
-    std::ranges::for_each(std::views::iota(0, kSide), [&](int x) {
+  for (const int y : std::views::iota(0, kSide))
+    for (const int x : std::views::iota(0, kSide)) {
       skia::SkPaint paint;
       paint.setColor(at(x, y));
       into.drawRect(skia::SkRect::MakeXYWH(static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f), paint);
-    });
-  });
+    }
   return bitmap.asImage();
 }
 
@@ -575,7 +574,8 @@ public:
       // Its own and each asked made now, as it is drawn -- not where the
       // first frosted thing asks for it.
       static_cast<void>(made->at(fAmount));
-      std::ranges::for_each(fAmounts, [&](float amount) { static_cast<void>(made->at(amount)); });
+      for (const float amount : fAmounts)
+        static_cast<void>(made->at(amount));
       fBlurs = std::move(made);
     }
     fOut.offer(fState.fId, Backdrop{fBlurs, fAmount, device, this->opaque(), skiff::scene::work::frameNumber()});
