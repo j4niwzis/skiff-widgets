@@ -27,6 +27,7 @@ public:
 template <class Child>
 class Collapsible : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Child>;
   template <class... Args>
   explicit Collapsible(Args &&...args) : fChild(std::forward<Args>(args)...) {
     fState.apply({.fillX = true, .masking = true});
@@ -102,6 +103,7 @@ private:
 // it, so nothing under it can be reached through it.
 template <class Over> class SlideLayer : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Over>;
   template <class... Args>
   explicit SlideLayer(skia::SkColor sheet, Args &&...args)
       : fOver(std::forward<Args>(args)...) {
@@ -159,6 +161,7 @@ private:
 template <class Base, class Over>
 class SlideOver : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Base, Over>;
   template <class... Args>
   explicit SlideOver(Args &&...args) : fBase(std::forward<Args>(args)...) {
     fState.apply({.fill = true});
@@ -287,6 +290,7 @@ struct pressed {};
 template <class Base, class Content, class Dismiss = dismiss::closes>
 class Drawer : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Base, Content>;
   // The base and the panel, each made in place from its own arguments:
   // Drawer(std::piecewise_construct, std::forward_as_tuple(...),
   // std::forward_as_tuple(...)).
