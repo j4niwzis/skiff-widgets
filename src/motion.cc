@@ -163,10 +163,10 @@ private:
 // view, a page opened from a page, in the one window. Each panel sits on a
 // sheet of its own colour and takes every press on it.
 //
-// Panels that have gone are destroyed by dropClosed(), which the program
-// calls between events once they have slid out: never inside a panel's own
-// handlers. It is a sweeping movement: below skiff::paint::motion::full the
-// panels come and go at once.
+// Panels that have gone are destroyed by the frame that ends their slide out
+// (update, a tick: never inside a panel's own handlers) -- nothing the
+// program calls. It is a sweeping movement: below skiff::paint::motion::full
+// the panels come and go at once.
 template <class Base, class Over>
 class SlideOver : public skiff::scene::Node {
 public:
@@ -259,6 +259,8 @@ public:
     if (moved) {
       this->invalidateLayout();
     }
+    // Those slid all the way out, gone with the frame that ended them.
+    this->dropClosed();
   }
 
   void layoutChildren() {
@@ -504,9 +506,10 @@ using DialogPlace = spl::variant<dialog_place::centred, dialog_place::near_top>;
 // A box in the middle of the window over a dimmed background, as a settings
 // or confirmation dialog: it fades in, and a press off it or Esc from inside
 // it fades it out. It is a layer of its own -- it fills its parent and goes
-// last among the parent's children -- and holds nothing while shut. The
-// program destroys a shut one with dropClosed(), between events. It is a
-// subtle movement: at skiff::paint::motion::none it comes and goes at once.
+// last among the parent's children -- and holds nothing while shut: what it showed is destroyed by the
+// frame that ends its fade (update, a tick, never inside its content's own
+// handlers), nothing the program calls. It is a subtle movement: at
+// skiff::paint::motion::none it comes and goes at once.
 template <class Content, class Dismiss = dismiss::closes>
 class Dialog : public skiff::scene::Node {
 public:
@@ -591,11 +594,14 @@ public:
   }
 
   [[nodiscard]] bool settling() const { return fFade.moving(); }
-  [[nodiscard]] bool wantsTick() const { return this->settling(); }
+  // Ticked while it fades, and once more where it has faded out with its
+  // content still there to drop.
+  [[nodiscard]] bool wantsTick() const { return this->settling() || (fContent && fClosing); }
   void update(double nowMs) {
     if (fFade.step(nowMs)) {
       this->showFade();
     }
+    this->dropClosed();
   }
 
   void layoutChildren() {
