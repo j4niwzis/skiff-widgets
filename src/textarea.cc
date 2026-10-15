@@ -1251,6 +1251,10 @@ private:
     this->showCaret();
     this->invalidateLayout();
     this->markDamaged();
+    // An area bound to a part of a model tells it every edit, as a text
+    // box does: its action asked as the press is delivered.
+    if constexpr (requires { OnSubmit::kEveryEdit; })
+      skiff::scene::pressLater(fState);
   }
   void showCaret() {
     fCaretSinceMs = fNowMs;

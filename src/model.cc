@@ -83,10 +83,12 @@ struct Answers {
 // A toggle showing a bool part -- a plain field, Field<&Settings::sound> --
 // or an optional one (unsaid is off), and setting it to the other when
 // pressed: twice, and it is as it was.
-template <class T = bool> class ToggleField : public internal::Toggle<Answers> {
+// Its look a switch's, or a checkbox's (internal::CheckboxLook): the same
+// input and semantics either way.
+template <class T = bool, class Look = internal::SwitchLook> class ToggleField : public internal::Toggle<Answers, Look> {
 public:
-  ToggleField() : internal::Toggle<Answers>(Answers{}) {}
-  explicit ToggleField(Theme theme) : internal::Toggle<Answers>(std::move(theme), Answers{}) {}
+  ToggleField() : internal::Toggle<Answers, Look>(Answers{}) {}
+  explicit ToggleField(Theme theme) : internal::Toggle<Answers, Look>(std::move(theme), Answers{}) {}
 
   void read(const T &now) {
     fNow = onOf(now);
@@ -107,6 +109,37 @@ private:
 };
 ToggleField() -> ToggleField<bool>;
 explicit ToggleField(Theme) -> ToggleField<bool>;
+
+// A text area showing a part of the model -- several lines of it, a topic,
+// a biography -- and setting it as it is typed into: every edit answered
+// with the part set to the text, as a text field's is.
+template <class T> struct Edited {
+  static constexpr bool kEveryEdit = true;
+  using Answer = skiff::bind::Own<skiff::model::SetTo<T>>;
+  Answer operator()(std::string_view text) const { return skiff::bind::own(skiff::model::setTo(T{std::string(text)})); }
+};
+template <class T> class TextAreaField : public internal::TextArea<Edited<T>> {
+public:
+  // `lines` shown before it scrolls; one, and Enter does nothing else.
+  TextAreaField(Theme theme, std::string placeholder, int lines = 1, bool masked = false)
+      : internal::TextArea<Edited<T>>(std::move(theme), std::move(placeholder), Edited<T>{}) {
+    this->setSingleLine(lines <= 1);
+    this->setMaxLines(std::max(lines, 1));
+    this->setMasked(masked);
+  }
+  // Shown again only where its text is another: the caret stays where it is
+  // as what was typed comes back.
+  void read(const T &now) {
+    const std::string &shown = textOf(now);
+    if (shown != this->text())
+      this->setText(shown);
+  }
+
+private:
+  static const std::string &textOf(const std::string &value) { return value; }
+  static std::string textOf(const std::optional<std::string> &value) { return value.value_or(""); }
+  template <class Wrapped> static const std::string &textOf(const Wrapped &value) { return value.value; }
+};
 
 // A slider showing a number part between two bounds, and setting it as it
 // is dragged: a whole number rounded to the nearest.
