@@ -142,7 +142,7 @@ public:
 
 private:
   template <class T> static void layOut(T &panel, const skia::SkRect &area) {
-    panel.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(panel).arrange(0.0f, 0.0f);
     skiff::scene::layout(panel, area);
   }
   template <class... Ts>
