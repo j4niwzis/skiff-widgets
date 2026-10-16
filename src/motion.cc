@@ -6,6 +6,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 import skiff.nodes;
+import skiff.compose;
 
 export namespace skiff::widgets {
 
@@ -68,7 +69,7 @@ public:
     return fUnfold.moving() || fChildHeight != fUsedHeight;
   }
   // Ticked while it unfolds, or has yet to hide what it folded away.
-  [[nodiscard]] bool wantsTick() const { return this->settling() || (!fOpen && fChild.fState.fVisible); }
+  [[nodiscard]] bool wantsTick() const { return this->settling() || (!fOpen && skiff::compose::state_of(fChild).fVisible); }
   void update(double nowMs) {
     if (fUnfold.step(nowMs) || fChildHeight != fUsedHeight) {
       this->invalidateLayout();
@@ -85,7 +86,7 @@ public:
 
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fChild.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fChild).arrange(0.0f, 0.0f);
     skiff::scene::layout(
         fChild, skia::SkRect::MakeXYWH(box.fLeft, box.fTop, box.width(), kRoom));
     if (fChild.visible()) {
@@ -273,7 +274,7 @@ public:
 
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fBase.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fBase).arrange(0.0f, 0.0f);
     skiff::scene::layout(fBase, box);
     for (SlideLayer<Over> &layer : fLayers) {
       const float value = layer.fSlide.value();
@@ -415,7 +416,7 @@ public:
   // made -- a phone's stood still half out while it was.
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fBase.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fBase).arrange(0.0f, 0.0f);
     skiff::scene::layout(fBase, box);
     fScrim.apply({.width = box.width(), .height = box.height()});
     fScrim.fState.arrange(0.0f, 0.0f);
@@ -425,7 +426,7 @@ public:
     fSheet.apply({.width = fPanelWidth, .height = box.height()});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, panel);
-    fContent.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fContent).arrange(0.0f, 0.0f);
     skiff::scene::layout(fContent, panel);
     this->place();
   }
@@ -670,16 +671,16 @@ public:
     const float most = top ? box.height() - 2.0f * *top : box.height() * 0.9f;
     float height = std::min(fHeight, most);
     if (fFitsContent) {
-      fContent->fState.arrange(0.0f, 0.0f);
+      skiff::compose::state_of(*fContent).arrange(0.0f, 0.0f);
       skiff::scene::layout(*fContent, skia::SkRect::MakeXYWH(box.fLeft, box.fTop, width, most));
-      height = std::min(fContent->fState.fBounds.height(), most);
+      height = std::min(skiff::compose::state_of(*fContent).fBounds.height(), most);
     }
     const skia::SkRect area = skia::SkRect::MakeXYWH(
         box.centerX() - width * 0.5f, top ? box.fTop + *top : box.centerY() - height * 0.5f, width, height);
     fSheet.apply({.width = width, .height = height});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, area);
-    fContent->fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(*fContent).arrange(0.0f, 0.0f);
     skiff::scene::layout(*fContent, area);
   }
 
@@ -733,7 +734,7 @@ private:
     fScrim.fState.setAlpha(value);
     fSheet.fState.setAlpha(value);
     if (fContent) {
-      fContent->fState.setAlpha(value);
+      skiff::compose::state_of(*fContent).setAlpha(value);
     }
   }
 
