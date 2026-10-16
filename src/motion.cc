@@ -753,7 +753,8 @@ private:
 // reads holds facts, and going as it goes where the part holds none. What
 // it holds is Make's (a type the program gives it, holding what it needs):
 // made from the facts as it opens -- make(facts) -- and kept while
-// make.stands(up, facts) says what is up still stands for them (a page
+// make.stands(up, made, now) says what is up, made from `made`, still
+// stands for the facts now (a page
 // that reads them itself, the same room's settings), made again where not;
 // before either, make.put(container, facts) puts it as they say (its size,
 // whether a press off it closes it).
@@ -769,13 +770,16 @@ public:
       return;
     }
     fMake.put(static_cast<Container &>(*this), *now);
-    if (auto *up = this->shown(); up && fMake.stands(*up, *now))
+    if (auto *up = this->shown(); up && fMade && fMake.stands(*up, *fMade, *now))
       return;
     this->open(fMake.make(*now));
+    fMade = *now;
   }
 
 private:
   Make fMake;
+  // The facts what is up was made from.
+  std::optional<Facts> fMade;
 };
 
 } // namespace skiff::widgets
