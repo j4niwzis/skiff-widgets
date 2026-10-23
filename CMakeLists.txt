@@ -184,29 +184,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 list(APPEND skiff_widgets_built skiff_ui)
 
-# demo/mazes: a maze visualizer's settings, written once against skiff.ui --
-# a page under Emscripten, a scene elsewhere.
-option(SKIFF_WIDGETS_DEMO "Build demo/mazes against skiff.ui" OFF)
-if(SKIFF_WIDGETS_DEMO)
-  if(skiff_ui_backend STREQUAL "web" AND CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    add_executable(skiff_mazes ${CMAKE_CURRENT_SOURCE_DIR}/demo/mazes/main_web.cc)
-    set_target_properties(skiff_mazes PROPERTIES OUTPUT_NAME index SUFFIX .html)
-    target_link_options(skiff_mazes PRIVATE ${skiff_emscripten_flags}
-      -sALLOW_MEMORY_GROWTH=1 -sEXPORTED_RUNTIME_METHODS=ccall
-      -sEXPORTED_FUNCTIONS=_main,_skiff_web_event
-      -sSTACK_SIZE=4194304 -sSTACK_OVERFLOW_CHECK=1
-      --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/demo/mazes/index.html)
-    target_compile_options(skiff_mazes PRIVATE ${skiff_emscripten_flags})
-  elseif(skiff_ui_backend STREQUAL "web")
-    add_executable(skiff_mazes ${CMAKE_CURRENT_SOURCE_DIR}/demo/mazes/main_web.cc)
-  else()
-    add_executable(skiff_mazes ${CMAKE_CURRENT_SOURCE_DIR}/demo/mazes/main_scene.cc)
-  endif()
   target_link_libraries(skiff_mazes PRIVATE skiff::ui)
   set_target_properties(skiff_mazes PROPERTIES CXX_STANDARD 23 CXX_SCAN_FOR_MODULES ON)
   target_include_directories(skiff_mazes PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/demo/mazes)
 endif()
-
 
 # ---- What this library is, said by the library ----
 if(COMMAND cme_declare_port)
