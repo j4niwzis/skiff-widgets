@@ -150,11 +150,36 @@ target_link_libraries(skiff_widgets_web PUBLIC skiff::web skiff::widgets_theme)
 list(APPEND skiff_widgets_built skiff_widgets_web)
 endif()
 
-# skiff.ui: the one vocabulary a program writes its UI in, answered by the
-# scene (skiff.compose and the widgets) or by the page (skiff.web and its
-# widgets) -- one module name, one of two source files, picked here. A
-# program written against skiff.ui is built for either.
-set(SKIFF_UI_BACKEND "" CACHE STRING "What answers skiff.ui: scene or web; empty for the scene where it is built, else the page")
+# skiff.ui: the one vocabulary a program writes its UI in, for both
+# backends at once (src/ui/ui.cc): a tree said in it is mounted on the page
+# (skiff.web and its widgets) or on the scene (skiff.compose and the
+# widgets), in one program if it likes. Built where either backend is; it
+# mounts on those that are (SKIFF_UI_ON_PAGE, SKIFF_UI_ON_SCENE).
+if(TARGET skiff::widgets OR TARGET skiff::widgets_web)
+  add_library(skiff_ui STATIC)
+  target_sources(skiff_ui PUBLIC FILE_SET CXX_MODULES FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/ui.cc)
+  target_link_libraries(skiff_ui PUBLIC skiff::widgets_theme)
+  if(TARGET skiff::widgets)
+    target_link_libraries(skiff_ui PUBLIC skiff::widgets)
+    target_compile_definitions(skiff_ui PUBLIC SKIFF_UI_ON_SCENE=1)
+  endif()
+  if(TARGET skiff::widgets_web)
+    target_link_libraries(skiff_ui PUBLIC skiff::widgets_web)
+    target_compile_definitions(skiff_ui PUBLIC SKIFF_UI_ON_PAGE=1)
+  endif()
+  # SKIFF_NAMED names a view over skiff.ui's Named: made the backend's
+  # named view where it is mounted.
+  target_compile_definitions(skiff_ui PUBLIC SKIFF_NAMED_BASE=::skiff::ui::Named)
+  add_library(skiff::ui ALIAS skiff_ui)
+  set_target_properties(skiff_ui PROPERTIES EXPORT_NAME ui CXX_STANDARD 23)
+  target_compile_features(skiff_ui PUBLIC cxx_std_23)
+  list(APPEND skiff_widgets_built skiff_ui)
+endif()
+
+# skiff.ui.backend: one backend's own names under skiff::ui -- the scene's
+# (src/ui/scene.cc) or the page's (src/ui/web.cc), picked here -- for a
+# program built for one backend at a time.
+set(SKIFF_UI_BACKEND "" CACHE STRING "What answers skiff.ui.backend: scene or web; empty for the scene where it is built, else the page")
 if(SKIFF_UI_BACKEND STREQUAL "")
   if(TARGET skiff::widgets)
     set(skiff_ui_backend scene)
@@ -165,22 +190,22 @@ else()
   set(skiff_ui_backend ${SKIFF_UI_BACKEND})
 endif()
 if(skiff_ui_backend STREQUAL "scene" AND TARGET skiff::widgets)
-  add_library(skiff_ui STATIC)
-  target_sources(skiff_ui PUBLIC FILE_SET CXX_MODULES FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/scene.cc)
-  target_link_libraries(skiff_ui PUBLIC skiff::widgets)
+  add_library(skiff_ui_backend STATIC)
+  target_sources(skiff_ui_backend PUBLIC FILE_SET CXX_MODULES FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/scene.cc)
+  target_link_libraries(skiff_ui_backend PUBLIC skiff::widgets)
 elseif(skiff_ui_backend STREQUAL "web" AND TARGET skiff::widgets_web)
-  add_library(skiff_ui STATIC)
-  target_sources(skiff_ui PUBLIC FILE_SET CXX_MODULES FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/web.cc)
-  target_link_libraries(skiff_ui PUBLIC skiff::widgets_web)
+  add_library(skiff_ui_backend STATIC)
+  target_sources(skiff_ui_backend PUBLIC FILE_SET CXX_MODULES FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/web.cc)
+  target_link_libraries(skiff_ui_backend PUBLIC skiff::widgets_web)
   # SKIFF_NAMED names a view over the page's Named here.
-  target_compile_definitions(skiff_ui PUBLIC SKIFF_NAMED_BASE=::skiff::web::Named)
+  target_compile_definitions(skiff_ui_backend PUBLIC SKIFF_NAMED_BASE=::skiff::web::Named)
 else()
-  message(FATAL_ERROR "skiff.ui on '${skiff_ui_backend}', but that backend is not built here")
+  message(FATAL_ERROR "skiff.ui.backend on '${skiff_ui_backend}', but that backend is not built here")
 endif()
-add_library(skiff::ui ALIAS skiff_ui)
-set_target_properties(skiff_ui PROPERTIES EXPORT_NAME ui CXX_STANDARD 23)
-target_compile_features(skiff_ui PUBLIC cxx_std_23)
-list(APPEND skiff_widgets_built skiff_ui)
+add_library(skiff::ui_backend ALIAS skiff_ui_backend)
+set_target_properties(skiff_ui_backend PROPERTIES EXPORT_NAME ui_backend CXX_STANDARD 23)
+target_compile_features(skiff_ui_backend PUBLIC cxx_std_23)
+list(APPEND skiff_widgets_built skiff_ui_backend)
 
 # ---- What this library is, said by the library ----
 if(COMMAND cme_declare_port)

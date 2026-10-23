@@ -1,8 +1,8 @@
-// skiff.ui on the scene: the one vocabulary a program writes its UI in,
+// skiff.ui.backend on the scene: one backend's names for skiff.ui,
 // answered here by skiff.compose and skiff-widgets, drawn through Skia. The
 // same module name is answered by src/ui/web.cc for a page in a browser;
 // the build picks one (SKIFF_UI_BACKEND), and the program is written once.
-export module skiff.ui;
+export module skiff.ui.backend;
 
 export import skiff.core;
 export import skiff.model;
