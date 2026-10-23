@@ -28,6 +28,14 @@ using skiff::web::Named;
 using skiff::web::Text;
 using skiff::web::Box;
 using skiff::web::Canvas;
+using skiff::web::Figure;
+using skiff::web::figure;
+using skiff::web::Polygon;
+using skiff::web::Polyline;
+using skiff::web::Line;
+using skiff::web::Circle;
+using skiff::web::each;
+using skiff::web::group;
 using skiff::web::Page;
 using skiff::web::fire;
 

@@ -30,6 +30,15 @@ using skiff::compose::handlers;
 using skiff::compose::Named;
 // A node drawn by its own hand, as the page has one.
 using skiff::nodes::Canvas;
+// Shapes as nodes in a figure, and a list of them: as the page has them.
+using skiff::nodes::Figure;
+using skiff::nodes::figure;
+using skiff::nodes::Polygon;
+using skiff::nodes::Polyline;
+using skiff::nodes::Line;
+using skiff::nodes::Circle;
+using skiff::compose::each;
+using skiff::compose::group;
 
 // The controls, bound to a model, as skiff-widgets spells them.
 using skiff::widgets::Theme;
