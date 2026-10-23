@@ -121,6 +121,24 @@ private:
 
 public:
 
+  // Without a width of its own -- none given, and not a share of its box --
+  // as wide as its label, with the theme's padding on either side: a button
+  // put in a column with no width was drawn nothing wide.
+  bool fAutoWidth = false;
+  void measure(const skia::SkRect &) {
+    if ((!fAutoWidth && fState.fWidth != 0.0f) || fState.fRelativeSizeAxes.any(skiff::scene::axes::kX) ||
+        fState.fAutoSizeAxes.any(skiff::scene::axes::kX)) {
+      return;
+    }
+    skia::SkFont *font = skiff::paint::defaultFont();
+    if (font == nullptr) {
+      return;
+    }
+    const skiff::paint::Painter p(nullptr, *font);
+    fAutoWidth = true;
+    fState.fWidth = p.measure(fLabel, fTheme.fFontSize) + 2.0f * fTheme.fPaddingX + 16.0f;
+  }
+
   void drawSelf(skia::SkCanvas *canvas, float alpha) {
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {

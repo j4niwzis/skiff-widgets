@@ -1,6 +1,8 @@
 export module skiff.widgets.model;
 
 import std;
+import skia;
+import skiff.paint;
 import skiff.scene;
 import skiff.model;
 import skiff.bind;
@@ -33,8 +35,10 @@ template <class T> struct Typed {
 // into. Wrapped in bind::Bound by compose::bound<T>(TextField<T>(...)).
 template <class T> class TextField : public internal::TextBox<Typed<T>> {
 public:
-  explicit TextField(std::string placeholder = {})
-      : internal::TextBox<Typed<T>>(std::move(placeholder), Typed<T>{}) {}
+  explicit TextField(std::string placeholder = {}, scene::Spec spec = {})
+      : internal::TextBox<Typed<T>>(std::move(placeholder), Typed<T>{}) {
+    this->apply(spec);
+  }
   TextField(Theme theme, std::string placeholder, bool masked = false)
       : internal::TextBox<Typed<T>>(std::move(theme), std::move(placeholder), Typed<T>{}) {
     this->setMasked(masked);
@@ -112,7 +116,8 @@ explicit ToggleField(Theme) -> ToggleField<bool>;
 // is dragged: a whole number rounded to the nearest.
 template <class T> class SliderField : public internal::SliderBar<Answers> {
 public:
-  SliderField(T low, T high) : internal::SliderBar<Answers>(Answers{}), fLow(low), fHigh(high) {}
+  // With a Spec of its own, as the page's SliderField takes one: one source for either.
+  SliderField(T low, T high, scene::Spec spec = {}) : internal::SliderBar<Answers>(Answers{}), fLow(low), fHigh(high) { this->apply(spec); }
   SliderField(Theme theme, T low, T high)
       : internal::SliderBar<Answers>(std::move(theme), Answers{}), fLow(low), fHigh(high) {}
 
@@ -255,16 +260,31 @@ private:
   std::vector<Choice> fChoices;
 };
 
-// A dropdown's rows, one for each value a part can be, showing the one it
-// is and setting it to the one chosen.
-template <class T> class ChoiceList : public internal::DropdownList<Answers> {
+// A dropdown over the page: closed, the button with the value a part is;
+// open, a plate of rows hung below the button, one for each value it can
+// be, drawn over what is under it -- raised, so the box it is in does not
+// grow -- and setting the part to the one chosen. It closes on a choice,
+// or on the button again.
+template <class T> class ChoiceList : public internal::DropdownButton<> {
+  using Base = internal::DropdownButton<>;
+
 public:
   using Choice = std::pair<std::string, T>;
-  explicit ChoiceList(std::vector<Choice> choices, scene::Spec spec = {})
-      : internal::DropdownList<Answers>(Answers{}), fChoices(std::move(choices)) {
+  // Open as made, where asked: for a shot or a test of the open list.
+  explicit ChoiceList(std::vector<Choice> choices, scene::Spec spec = {}, bool open = false)
+      : fChoices(std::move(choices)) {
     this->apply(spec);
-    this->setOptions(std::ranges::to<std::vector>(std::views::transform(fChoices, &Choice::first)));
+    this->fLabelWidth = 0.0f; // no label of its own: the value takes the width
+    fLook.fTheme = this->fTheme;
+    fRows.reserve(fChoices.size());
+    for (const Choice &choice : fChoices) {
+      fRows.emplace_back(choice.first, fLook);
+      fRows.back().setVisible(false);
+    }
+    if (open)
+      this->expand(true);
   }
+  void forEachChild(auto &&f) { f(fRows); }
 
   void read(const T &now) {
     const auto found = std::ranges::find(fChoices, now, &Choice::second);
@@ -272,14 +292,129 @@ public:
   }
   // A row chosen: set to its value.
   auto onPress() -> std::optional<skiff::bind::Own<skiff::model::SetTo<T>>> {
-    const int index = this->chosen();
+    const int index = fChosen;
     if (index < 0 || static_cast<std::size_t>(index) >= fChoices.size())
       return std::nullopt;
     return skiff::bind::own(skiff::model::setTo(fChoices[static_cast<std::size_t>(index)].second));
   }
 
+  // The value shown: on the button, and lit among the rows.
+  void setCurrent(int index) {
+    if (index == fCurrent)
+      return;
+    fCurrent = index;
+    const bool known = index >= 0 && static_cast<std::size_t>(index) < fChoices.size();
+    this->setValue(known ? fChoices[static_cast<std::size_t>(index)].first : std::string{});
+    for (std::size_t i = 0; i < fRows.size(); ++i)
+      fRows[i].setChosen(static_cast<int>(i) == fCurrent);
+  }
+  [[nodiscard]] int current() const noexcept { return fCurrent; }
+  [[nodiscard]] int chosen() const noexcept { return fChosen; }
+
+  // Opened or closed: the rows shown or hidden, the whole raised over the
+  // window while open.
+  void expand(bool open) {
+    if (open == this->open())
+      return;
+    this->setOpen(open);
+    for (DropdownRow &row : fRows)
+      row.setVisible(open);
+    this->setRaised(open);
+    this->invalidateLayout();
+  }
+
+  // The rows hang below the button: as wide as it, or as the widest label.
+  void layoutChildren() {
+    if (!this->open() || fRows.empty())
+      return;
+    const skia::SkRect box = fState.fBounds;
+    float widest = 0.0f;
+    if (skia::SkFont *font = skiff::paint::defaultFont(); font != nullptr) {
+      const skiff::paint::Painter p(nullptr, *font);
+      for (const DropdownRow &row : fRows)
+        widest = std::max(widest, p.measure(row.label(), fLook.fFontSize));
+    }
+    const float width = std::max(box.width(), widest + 2.0f * fLook.fTextInset + 8.0f);
+    const float height =
+        static_cast<float>(fRows.size()) * (fLook.fRowHeight + kRowGap) - kRowGap + 2.0f * kPlatePad;
+    const skia::SkRect plate = skia::SkRect::MakeXYWH(box.fLeft, box.fBottom + kPlateGap, width, height);
+    const skia::SkRect inner = plate.makeInset(kPlatePad, kPlatePad);
+    float y = 0.0f;
+    for (DropdownRow &row : fRows) {
+      row.fState.arrange(0.0f, y);
+      skiff::scene::layout(row, inner);
+      y += row.fState.fBounds.height() + kRowGap;
+    }
+  }
+
+  // The plate under the rows: from where they are as drawn -- a node moved
+  // after its layout takes its children with it, and a box kept from the
+  // layout would stay behind.
+  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+    Base::drawSelf(canvas, alpha);
+    if (!this->open() || fRows.empty())
+      return;
+    skia::SkFont *font = skiff::paint::defaultFont();
+    if (font == nullptr)
+      return;
+    skia::SkRect plate = skia::SkRect::MakeEmpty();
+    for (const DropdownRow &row : fRows)
+      plate.join(row.fState.fBounds);
+    plate.outset(kPlatePad, kPlatePad);
+    const skiff::paint::Painter p(canvas, *font);
+    p.fillRounded(plate.makeOffset(0.0f, 3.0f), fLook.fPlateRadius, skia::colorSetARGB(70, 0, 0, 0), alpha);
+    p.fillRounded(plate, fLook.fPlateRadius, fLook.fTheme.fSurface, alpha);
+    p.strokeRounded(plate, fLook.fPlateRadius, fLook.fTheme.fAccent, 1.5f, alpha);
+  }
+
+  [[nodiscard]] bool acceptsInput() const { return true; }
+  [[nodiscard]] bool hoverChangesAppearance() const { return !this->open(); }
+  [[nodiscard]] bool focusChangesAppearance() const { return true; }
+  // The button: opened, or closed again.
+  [[nodiscard]] bool onClick(float, float) {
+    this->expand(!this->open());
+    return true;
+  }
+
+  using Node::onPointer;
+  // A row's press: chosen, the list closed, the press delivered (onPress).
+  void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &, skiff::scene::PointerReply &reply) {
+    if (const int index = this->rowOf(reply.fTarget); index >= 0) {
+      this->choose(index);
+      reply.handle();
+    }
+  }
+  using Node::onSemantic;
+  void onSemantic(skiff::scene::phase::bubble, const skiff::scene::semantic_action::activate &, skiff::scene::Reply &reply) {
+    if (const int index = this->rowOf(reply.fTarget); index >= 0) {
+      this->choose(index);
+      reply.handle();
+    }
+  }
+
 private:
+  static constexpr float kRowGap = 2.0f;
+  static constexpr float kPlatePad = 4.0f;
+  static constexpr float kPlateGap = 4.0f;
+
+  void choose(int index) {
+    this->expand(false);
+    this->setCurrent(index);
+    fChosen = index;
+    skiff::scene::pressLater(fState);
+  }
+  [[nodiscard]] int rowOf(skiff::scene::NodeId id) const {
+    for (std::size_t i = 0; i < fRows.size(); ++i)
+      if (fRows[i].id() == id)
+        return static_cast<int>(i);
+    return -1;
+  }
+
   std::vector<Choice> fChoices;
+  std::vector<DropdownRow> fRows;
+  DropdownLook fLook;
+  int fCurrent = -1;
+  int fChosen = -1;
 };
 
 // A text area sending an E made of its text each time it is submitted --
@@ -311,8 +446,10 @@ template <class E> struct Sent {
 template <class E> class SendButton : public internal::Button<Sent<E>> {
 public:
   using Out = skiff::model::Types<E>;
-  SendButton(std::string label, E event)
-      : internal::Button<Sent<E>>(std::move(label), Sent<E>{std::move(event)}) {}
+  SendButton(std::string label, E event, scene::Spec spec = {})
+      : internal::Button<Sent<E>>(std::move(label), Sent<E>{std::move(event)}) {
+    this->apply(spec);
+  }
   SendButton(Theme theme, std::string label, E event)
       : internal::Button<Sent<E>>(std::move(theme), std::move(label), Sent<E>{std::move(event)}) {}
   // A bound action follows model edits without replacing the focused button.
