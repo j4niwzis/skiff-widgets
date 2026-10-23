@@ -85,6 +85,10 @@ using skiff::web::Node;
   css += ".skiff-loader[data-stopped]{animation:none}\n@keyframes skiff-spin{to{transform:rotate(360deg)}}\n";
   css += ".skiff-menu{display:inline-flex;align-items:center;gap:8px;color:" + label + ";font:" + font + " system-ui,sans-serif}\n";
   css += ".skiff-scroll{min-height:0}\n";
+  css += ".skiff-drawer,.skiff-slideover,.skiff-wallpaper{position:relative;overflow:hidden}\n";
+  css += ".skiff-scrim{position:absolute;inset:0;background:rgba(0,0,0,.45)}\n";
+  css += ".skiff-sheet{position:absolute;top:0;bottom:0;left:0;transition:transform .22s;box-shadow:0 0 24px rgba(0,0,0,.4)}\n";
+  css += ".skiff-slideover>.skiff-panel{position:absolute;inset:0}\n";
   // The page's own rules -- placement, hover, tails -- after the widgets'.
   css += pageCss();
   return css;
@@ -881,6 +885,185 @@ public:
 private:
   Child fChild;
   bool fOpen = false;
+};
+
+// ---- what slides over a base ---------------------------------------------------
+
+namespace dismiss {
+struct closes {};
+struct pressed {};
+} // namespace dismiss
+
+// A navigation drawer: a panel pulled out from the left edge over a base,
+// the rest of the base dimmed under a scrim; a click on the scrim pushes it
+// back -- or, with dismiss::pressed (or a type of the program's), is a
+// press of the drawer's, answered with that type.
+template <class Base, class Content, class Dismiss = dismiss::closes> class Drawer : public Node {
+public:
+  template <class... BaseArgs, class... ContentArgs>
+  Drawer(std::piecewise_construct_t, std::tuple<BaseArgs...> base, std::tuple<ContentArgs...> content)
+      : fBase(std::make_from_tuple<Base>(std::move(base))), fPanel(vbox(), std::make_from_tuple<Content>(std::move(content))) {
+    fState.apply({.fill = true});
+    fScrim.setVisible(false);
+    fPanel.apply({.fillY = true, .width = fWidth});
+  }
+  [[nodiscard]] Base &base() noexcept { return fBase; }
+  [[nodiscard]] Content &content() noexcept { return std::get<0>(fPanel.fParts); }
+  [[nodiscard]] bool isOpen() const noexcept { return fOpen; }
+  void setSheetColour(scene::Colour colour) {
+    fSheet = colour;
+    markDirty();
+  }
+  void setWidth(float width) {
+    fWidth = width;
+    fPanel.apply({.width = width});
+    markDirty();
+  }
+  void open() { setOpen(true); }
+  void close() { setOpen(false); }
+  void closeNow() { setOpen(false); }
+  void setOpen(bool open) {
+    fOpen = open;
+    fScrim.setVisible(open);
+    markDirty();
+  }
+  void forEachChild(auto &&f) {
+    f(fBase);
+    f(fScrim);
+    f(fPanel);
+  }
+  void mounted() { dom::attr(fState.fHandle, "class", "skiff-drawer"); }
+  template <class F> void handles(F &&f) {
+    f(fState.fHandle);
+    f(fScrim.element());
+  }
+  // The children are elements by the time the drawer is synced (mounted
+  // runs before they are made): the sheet's class and its slide are written here.
+  void sync() {
+    dom::attr(fPanel.element(), "class", "skiff-stack skiff-sheet");
+    dom::style(fPanel.element(), "transform", fOpen ? "translateX(0)" : "translateX(-100%)");
+    dom::style(fPanel.element(), "background-color", rgba(fSheet));
+  }
+  // The scrim clicked: the drawer pushed back, or the program told.
+  bool onDom(dom::Handle target, std::string_view event, std::string_view) {
+    if (target != fScrim.element() || event != "click" || !fOpen) return false;
+    if constexpr (std::same_as<Dismiss, dismiss::closes>) {
+      close();
+      return false;
+    } else {
+      return true;
+    }
+  }
+  auto onPress() {
+    if constexpr (std::same_as<Dismiss, dismiss::pressed>) {
+      close();
+    } else if constexpr (!std::same_as<Dismiss, dismiss::closes>) {
+      return Dismiss{};
+    }
+  }
+
+private:
+  // What covers the base: it takes the click, so a press off the panel
+  // closes the drawer rather than reaching what is under it.
+  struct Scrim : Box<> {
+    void mounted() {
+      dom::attr(fState.fHandle, "class", "skiff-scrim");
+      dom::listen(fState.fHandle, "click");
+    }
+  };
+  Base fBase;
+  Scrim fScrim;
+  Stack<Content> fPanel;
+  scene::Colour fSheet = 0xff202020u;
+  float fWidth = 300.0f;
+  bool fOpen = false;
+};
+
+// A base, and over it a stack of panels, each over what is under it -- a
+// settings page, a detail view, a page opened from a page, in the one
+// window. The scene slides them; the page shows them (a transition of the
+// sheet's, where the browser gives one).
+template <class Base, class Over> class SlideOver : public Node {
+public:
+  template <class... Args> explicit SlideOver(Args &&...args) : fBase(std::forward<Args>(args)...) { fState.apply({.fill = true}); }
+  [[nodiscard]] Base &base() noexcept { return fBase; }
+  [[nodiscard]] Over *shown() noexcept { return fRows.empty() ? nullptr : &fRows.back(); }
+  void setSheetColour(scene::Colour colour) { fSheet = colour; }
+  template <class... Args> Over &open(Args &&...args) {
+    Over &made = fRows.emplace_back(std::forward<Args>(args)...);
+    made.apply({.place = scene::anchor::kTopLeft, .fillX = true, .fillY = true, .background = fSheet});
+    markDirty();
+    return made;
+  }
+  void back() {
+    if (!fRows.empty()) fRows.pop_back();
+    markDirty();
+  }
+  void close() {
+    fRows.clear();
+    markDirty();
+  }
+  void dropClosed() {}
+  [[nodiscard]] std::size_t depth() const noexcept { return fRows.size(); }
+  void forEachChild(auto &&f) {
+    f(fBase);
+    f(fRows);
+  }
+  void mounted() { dom::attr(fState.fHandle, "class", "skiff-slideover"); }
+  std::vector<Over> fRows;
+  std::vector<dom::Handle> fShownRows;
+
+private:
+  Base fBase;
+  scene::Colour fSheet = 0xff202020u;
+};
+
+// A wallpaper under a chat: a colour or a gradient, a tint over it, blurred
+// where the scene blurs a picture (the browser's filter). The scene's
+// patterns are its own drawing: here the pattern's colour stands for it.
+template <class Out = scene::NoAction> class Wallpaper : public Node {
+public:
+  explicit Wallpaper(Out out = {}) : fOut(std::move(out)) { fState.apply({.fill = true}); }
+  void setOut(Out out) { fOut = std::move(out); }
+  void setGradient(std::optional<scene::Gradient> gradient) {
+    fGradient = gradient;
+    markDirty();
+  }
+  template <class Pattern> void setPattern(std::shared_ptr<const Pattern>, scene::Colour colour) {
+    fColour = colour;
+    markDirty();
+  }
+  void setTint(std::optional<scene::Colour> tint) {
+    fTint = tint;
+    markDirty();
+  }
+  void setOpacity(float opacity) {
+    fOpacity = opacity;
+    markDirty();
+  }
+  void setBlur(float amount) {
+    fBlur = amount;
+    markDirty();
+  }
+  void setBlurs(std::vector<float> amounts) { setBlur(amounts.empty() ? 0.0f : amounts.front()); }
+  void mounted() { dom::attr(fState.fHandle, "class", "skiff-wallpaper"); }
+  void sync() {
+    const dom::Handle h = fState.fHandle;
+    if (fGradient) dom::style(h, "background-image", "linear-gradient(" + rgba(fGradient->top) + "," + rgba(fGradient->bottom) + ")");
+    else dom::style(h, "background-image", "");
+    if (fColour) dom::style(h, "background-color", rgba(*fColour));
+    dom::style(h, "opacity", number(fOpacity));
+    dom::style(h, "filter", fBlur > 0.0f ? "blur(" + px(fBlur) + ")" : std::string());
+    dom::style(h, "box-shadow", fTint ? "inset 0 0 0 100vmax " + rgba(*fTint) : std::string());
+  }
+
+private:
+  Out fOut;
+  std::optional<scene::Gradient> fGradient;
+  std::optional<scene::Colour> fColour;
+  std::optional<scene::Colour> fTint;
+  float fOpacity = 1.0f;
+  float fBlur = 0.0f;
 };
 
 } // namespace skiff::widgets::web

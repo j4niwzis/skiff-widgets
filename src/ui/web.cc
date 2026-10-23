@@ -68,5 +68,16 @@ using skiff::widgets::web::Avatar;
 using skiff::widgets::web::RadialLoader;
 using skiff::widgets::web::ChoiceMenu;
 using skiff::widgets::web::Collapsible;
+using skiff::widgets::web::Drawer;
+using skiff::widgets::web::SlideOver;
+using skiff::widgets::web::Wallpaper;
+namespace dismiss = skiff::widgets::web::dismiss;
+using skiff::web::styled;
+using skiff::web::projected;
+using skiff::web::spec_for;
+using skiff::web::text_for;
+using skiff::web::derived;
+using skiff::web::erased;
+using skiff::web::flicked;
 
 } // namespace skiff::ui

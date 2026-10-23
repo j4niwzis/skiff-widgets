@@ -67,6 +67,17 @@ using skiff::widgets::Avatar;
 using skiff::widgets::RadialLoader;
 using skiff::widgets::ChoiceMenu;
 using skiff::widgets::Collapsible;
+using skiff::widgets::Drawer;
+using skiff::widgets::SlideOver;
+using skiff::widgets::Wallpaper;
+namespace dismiss = skiff::widgets::dismiss;
+using skiff::compose::styled;
+using skiff::compose::projected;
+using skiff::compose::spec_for;
+using skiff::compose::text_for;
+using skiff::compose::derived;
+using skiff::compose::erased;
+using skiff::compose::flicked;
 
 // A text and a box said by a Spec alone, as the page says them: the font
 // and the colour the theme's, the box's colour its background.

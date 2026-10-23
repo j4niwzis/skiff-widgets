@@ -212,6 +212,42 @@ TEST(Web, TheScenesWidgetsAreTheBrowsersControlsCallingTheirActions) {
   EXPECT_EQ(menu.current, 0u);
 }
 
+TEST(Web, ADrawerAndASlideOverShowWhatIsOpenedOverTheirBase) {
+  dom::reset();
+  Model m;
+  Page page(column(Drawer<Text, Text>(std::piecewise_construct, std::make_tuple("base"), std::make_tuple("panel")), SlideOver<Text, Text>("under")), m);
+  page.mount();
+  auto &drawer = std::get<0>(page.root().fParts);
+  auto &over = std::get<1>(page.root().fParts);
+  std::string html = dom::dump(drawer.element());
+  EXPECT_NE(html.find("class=\"skiff-scrim\" style=\"display:none;\""), std::string::npos) << html;
+  EXPECT_NE(html.find("transform:translateX(-100%);"), std::string::npos) << html;
+  drawer.open();
+  page.sync();
+  html = dom::dump(drawer.element());
+  EXPECT_TRUE(drawer.isOpen());
+  EXPECT_EQ(html.find("display:none"), std::string::npos) << html;
+  EXPECT_NE(html.find("transform:translateX(0);"), std::string::npos) << html;
+  // The scrim clicked: pushed back.
+  dom::Handle scrim = dom::kNone;
+  drawer.handles([&](dom::Handle h) { if (h != drawer.element()) scrim = h; });
+  fire(page, scrim, "click", "");
+  EXPECT_FALSE(drawer.isOpen());
+  // A panel opened over the base, and taken back.
+  EXPECT_EQ(over.shown(), nullptr);
+  over.open("detail");
+  page.sync();
+  html = dom::dump(over.element());
+  EXPECT_NE(html.find(">detail</span>"), std::string::npos) << html;
+  EXPECT_NE(html.find("position:absolute;"), std::string::npos) << html;
+  ASSERT_NE(over.shown(), nullptr);
+  EXPECT_EQ(over.shown()->text(), "detail");
+  over.back();
+  page.sync();
+  EXPECT_EQ(over.shown(), nullptr);
+  EXPECT_EQ(dom::dump(over.element()).find(">detail<"), std::string::npos) << dom::dump(over.element());
+}
+
 TEST(Web, AnAreaSubmitsOnEnterAndIsEmptiedForTheNext) {
   dom::reset();
   Model2 m;
