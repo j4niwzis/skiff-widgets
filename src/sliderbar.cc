@@ -82,12 +82,7 @@ public:
   }
   static constexpr float kTrack = 6.0f;
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  template <class P> void drawSelf(P &p, float alpha) {
     const skia::SkRect line = this->track();
     p.fillRounded(line, fTrackRadius, fTheme.fSurface, alpha);
     p.fillRounded(skia::SkRect::MakeXYWH(line.fLeft, line.fTop, line.width() * fFraction, line.height()), fTrackRadius,
@@ -344,12 +339,7 @@ public:
   float fTrackRadius = 3.0f;
   float fMinSpan = 0.0f;
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  template <class P> void drawSelf(P &p, float alpha) {
     const float trackHeight = std::min(fTrackHeight, fState.fBounds.height());
     const skia::SkRect track = skia::SkRect::MakeXYWH(
         fState.fBounds.fLeft, fState.fBounds.centerY() - trackHeight * 0.5f,
@@ -456,7 +446,7 @@ namespace internal {
 // a checkbox without copying the switch's keyboard or accessibility handling.
 struct SwitchLook {
   static constexpr float width = 40.0f, height = 22.0f;
-  template <class Toggle> static void draw(Toggle& widget, const skiff::paint::Painter& p, float alpha) {
+  template <class Toggle, class P> static void draw(Toggle& widget, const P& p, float alpha) {
     const auto& bounds = widget.fState.fBounds;
     p.fillRounded(bounds, bounds.height() * 0.5f,
                   widget.mixedColour(widget.fTheme.fSurface, widget.fTheme.fAccent), alpha);
@@ -469,7 +459,7 @@ struct SwitchLook {
 };
 struct CheckboxLook {
   static constexpr float width = 22.0f, height = 22.0f;
-  template <class Toggle> static void draw(Toggle& widget, const skiff::paint::Painter& p, float alpha) {
+  template <class Toggle, class P> static void draw(Toggle& widget, const P& p, float alpha) {
     const auto& bounds = widget.fState.fBounds;
     p.fillRounded(bounds, 3.0f, widget.on() ? widget.fTheme.fAccent : widget.fTheme.fSurface, alpha);
     p.strokeRounded(bounds, 3.0f, widget.showsFocus() ? widget.fTheme.fAccent : widget.fTheme.fText, 1.0f, alpha);
@@ -533,14 +523,7 @@ public:
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
-    Look::draw(*this, p, alpha);
-  }
+  template <class P> void drawSelf(P &p, float alpha) { Look::draw(*this, p, alpha); }
 
   [[nodiscard]] float position() const noexcept { return fKnob; }
   [[nodiscard]] skia::SkColor mixedColour(skia::SkColor a, skia::SkColor b) const {

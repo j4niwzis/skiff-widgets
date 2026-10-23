@@ -178,12 +178,9 @@ public:
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  // Drawn through the painter alone; a decoration of the active tab is
+  // given the painter too, as the tabs are.
+  template <class P> void drawSelf(P &p, float alpha) {
     const float baseline = fBaseline >= 0.0f ? fBaseline : fFontSize;
     if (!fHeader.empty()) {
       p.text(fHeader, fState.fBounds.fLeft, fState.fBounds.fTop + baseline, fFontSize,
@@ -199,7 +196,7 @@ public:
       p.text(fTabs[i].fLabel, box.fLeft, box.fTop + baseline, fFontSize, colour,
              alpha, active);
       if (active) {
-        std::invoke(fDecorate, canvas, box, alpha);
+        std::invoke(fDecorate, p, box, alpha);
       }
     }
     if (this->showsFocus()) {
@@ -328,8 +325,8 @@ private:
 template <class OnSelect, class IsActive, class Decorate>
 class ErasedTabBar
     : public internal::TabBar<AnyCallFor<void(int), OnSelect>, AnyCallFor<bool(int), IsActive>,
-                              AnyCallFor<void(skia::SkCanvas *, const skia::SkRect &, float), Decorate>> {
-  using Base = internal::TabBar<AnyCallFor<void(int), OnSelect>, AnyCallFor<bool(int), IsActive>, AnyCallFor<void(skia::SkCanvas *, const skia::SkRect &, float), Decorate>>;
+                              AnyCallFor<void(skiff::paint::Painter &, const skia::SkRect &, float), Decorate>> {
+  using Base = internal::TabBar<AnyCallFor<void(int), OnSelect>, AnyCallFor<bool(int), IsActive>, AnyCallFor<void(skiff::paint::Painter &, const skia::SkRect &, float), Decorate>>;
 
 public:
   // Its own handlers, as the wrapper's own: brought in here, so that they
@@ -342,9 +339,9 @@ public:
   using Base::onSemantic;
   ErasedTabBar(Theme theme, OnSelect onSelect, IsActive isActive = {}, Decorate decorate = {})
       : Base(std::move(theme), AnyCallFor<void(int), OnSelect>(std::move(onSelect)), AnyCallFor<bool(int), IsActive>(std::move(isActive)),
-             AnyCallFor<void(skia::SkCanvas *, const skia::SkRect &, float), Decorate>(std::move(decorate))) {}
+             AnyCallFor<void(skiff::paint::Painter &, const skia::SkRect &, float), Decorate>(std::move(decorate))) {}
   explicit ErasedTabBar(OnSelect onSelect = {}, IsActive isActive = {}, Decorate decorate = {})
-      : Base(AnyCallFor<void(int), OnSelect>(std::move(onSelect)), AnyCallFor<bool(int), IsActive>(std::move(isActive)), AnyCallFor<void(skia::SkCanvas *, const skia::SkRect &, float), Decorate>(std::move(decorate))) {}
+      : Base(AnyCallFor<void(int), OnSelect>(std::move(onSelect)), AnyCallFor<bool(int), IsActive>(std::move(isActive)), AnyCallFor<void(skiff::paint::Painter &, const skia::SkRect &, float), Decorate>(std::move(decorate))) {}
 };
 // The tab bar: made for what it is given in a release build, over those
 // otherwise.

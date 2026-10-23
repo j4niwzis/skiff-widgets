@@ -171,35 +171,39 @@ using BackdropShape = spl::variant<skia::SkRRect, skia::SkPath>;
       [](const skia::SkRRect& box) { return box.rect(); },
       [](const skia::SkPath& path) { return path.getBounds(); }}, shape);
 }
-inline void drawBackdropShape(skia::SkCanvas* canvas, const BackdropShape& shape, const skia::SkPaint& paint) {
-  spl::visit(spl::overloaded{
-      [&](const skia::SkRRect& box) { canvas->drawRRect(box, paint); },
-      [&](const skia::SkPath& path) { canvas->drawPath(path, paint); }}, shape);
+template <class P>
+inline void fillBackdropShape(const P &p, const BackdropShape &shape, skia::SkColor colour, float alpha) {
+  spl::visit(spl::overloaded{[&](const skia::SkRRect &box) { p.fill(box, colour, alpha); },
+                             [&](const skia::SkPath &path) { p.fill(path, colour, alpha); }},
+             shape);
+}
+template <class P>
+inline void imageThroughBackdropShape(const P &p, const BackdropShape &shape, const skia::SkImage *image,
+                                      const skia::SkRect &at, float alpha, typename P::Sampling how) {
+  spl::visit(spl::overloaded{[&](const skia::SkRRect &box) { p.imageThrough(box, image, at, alpha, how); },
+                             [&](const skia::SkPath &path) { p.imageThrough(path, image, at, alpha, how); }},
+             shape);
 }
 // The piece of a backdrop under a shape, as blurred as `blur` says: the
 // shape filled with the image, one antialiased draw -- not an antialiased
 // clip, a mask made for each frosted thing at each repaint, and the image
 // drawn into it. At the device's pixels, put down as it is; smoothed only
 // where it is smaller than the device; nothing outside the backdrop.
-inline void drawBackdrop(skia::SkCanvas *canvas, const Backdrop &one, float blur, const BackdropShape &shape, float alpha) {
-  skia::SkMatrix inverse;
-  if (one.device.isEmpty() || !canvas->getTotalMatrix().invert(&inverse)) {
+template <class P>
+inline void drawBackdrop(const P &p, const Backdrop &one, float blur, const BackdropShape &shape, float alpha) {
+  if (one.device.isEmpty()) {
+    return;
+  }
+  const std::optional<skia::SkRect> at = p.fromDevice(one.device);
+  if (!at) {
     return;
   }
   const skia::Sp<skia::SkImage> image = backdropImage(one, blur);
   if (!image) {
     return;
   }
-  const skia::SkMatrix local =
-      skia::SkMatrix::RectToRect(skia::SkRect::MakeIWH(image->width(), image->height()), inverse.mapRect(one.device));
   const bool sharp = std::abs(static_cast<float>(image->width()) - one.device.width()) <= 1.0f;
-  skia::SkPaint paint;
-  paint.setAntiAlias(true);
-  paint.setAlphaf(alpha);
-  paint.setShader(image->makeShader(skia::SkTileMode::kDecal, skia::SkTileMode::kDecal,
-                                    skia::SkSamplingOptions(sharp ? skia::SkFilterMode::kNearest : skia::SkFilterMode::kLinear),
-                                    &local));
-  drawBackdropShape(canvas, shape, paint);
+  imageThroughBackdropShape(p, shape, image.get(), *at, alpha, sharp ? P::Sampling::sharp : P::Sampling::linear);
 }
 // What is under a shape, frosted, of the backdrops the wallpapers offered (in
 // the order they lie, the lowest first): those drawn in this frame and under
@@ -208,10 +212,10 @@ inline void drawBackdrop(skia::SkCanvas *canvas, const Backdrop &one, float blur
 // background then showed the chat's, or the chat's other blur, row by row as
 // each was repainted). One drawn this frame is one shown: a hidden one is
 // not drawn.
-template <std::ranges::forward_range Backdrops>
+template <class P, std::ranges::forward_range Backdrops>
   requires std::convertible_to<std::ranges::range_reference_t<Backdrops>, const Backdrop &>
-void drawBackdrops(skia::SkCanvas *canvas, Backdrops &&all, float blur, const BackdropShape &shape, float alpha) {
-  const skia::SkRect on = canvas->getTotalMatrix().mapRect(backdropBounds(shape));
+void drawBackdrops(const P &p, Backdrops &&all, float blur, const BackdropShape &shape, float alpha) {
+  const skia::SkRect on = p.toDevice(backdropBounds(shape));
   const std::uint64_t now = skiff::scene::work::frameNumber();
   auto under = std::views::filter(all, [&](const Backdrop &one) {
                  return one.frame == now && skia::SkRect::Intersects(one.device, on);
@@ -219,7 +223,7 @@ void drawBackdrops(skia::SkCanvas *canvas, Backdrops &&all, float blur, const Ba
   const auto hiding = std::ranges::find_last_if(
       under, [&](const Backdrop &one) { return one.opaque && one.device.contains(on.makeInset(0.5f, 0.5f)); });
   std::ranges::for_each(hiding.empty() ? under.begin() : hiding.begin(), under.end(),
-                        [&](const Backdrop &one) { drawBackdrop(canvas, one, blur, shape, alpha); });
+                        [&](const Backdrop &one) { drawBackdrop(p, one, blur, shape, alpha); });
 }
 // Where backdrops come from: a value called as it is drawn, as an Image's
 // source is -- the program's, giving those its wallpapers offered, the
@@ -233,9 +237,9 @@ concept BackdropSource = std::copy_constructible<Source> && requires(const Sourc
 // radius: frosted glass, behind what a node holds -- its first part, filling
 // it. As blurred as setBlur says (0 to 1); below 0, the backdrop's own.
 // The backdrops a source gives, drawn: those it is called for.
-template <BackdropSource Source>
-void drawFrom(const Source &source, skia::SkCanvas *canvas, float blur, const BackdropShape &shape, float alpha) {
-  drawBackdrops(canvas, source(), blur, shape, alpha);
+template <BackdropSource Source, class P>
+void drawFrom(const Source &source, const P &p, float blur, const BackdropShape &shape, float alpha) {
+  drawBackdrops(p, source(), blur, shape, alpha);
 }
 // A source, whatever it is: its backdrops drawn as they would be, lazily, by
 // the code made where it was erased. Erasure, outside a release build only.
@@ -246,19 +250,19 @@ public:
   template <class Source>
     requires(!std::same_as<std::remove_cvref_t<Source>, AnyBackdropSource> && BackdropSource<Source>)
   explicit AnyBackdropSource(Source source)
-      : fDraw([source = std::move(source)](skia::SkCanvas *canvas, float blur, const BackdropShape &shape, float alpha) {
-          drawFrom(source, canvas, blur, shape, alpha);
-        }) {}
-  void draw(skia::SkCanvas *canvas, float blur, const BackdropShape &shape, float alpha) const {
-    fDraw(canvas, blur, shape, alpha);
+      : fDraw([source = std::move(source)](const skiff::paint::Painter &p, float blur, const BackdropShape &shape,
+                                           float alpha) { drawFrom(source, p, blur, shape, alpha); }) {}
+  // Erased, it draws with the scene's painter: the one it was erased for.
+  void draw(const skiff::paint::Painter &p, float blur, const BackdropShape &shape, float alpha) const {
+    fDraw(p, blur, shape, alpha);
   }
 
 private:
-  std::function<void(skia::SkCanvas *, float, const BackdropShape &, float)> fDraw;
+  std::function<void(const skiff::paint::Painter &, float, const BackdropShape &, float)> fDraw;
 };
-inline void drawFrom(const AnyBackdropSource &source, skia::SkCanvas *canvas, float blur, const BackdropShape &shape,
-                     float alpha) {
-  source.draw(canvas, blur, shape, alpha);
+inline void drawFrom(const AnyBackdropSource &source, const skiff::paint::Painter &p, float blur,
+                     const BackdropShape &shape, float alpha) {
+  source.draw(p, blur, shape, alpha);
 }
 namespace internal {
 template <class Source> class BackdropPane : public skiff::scene::Node {
@@ -280,19 +284,15 @@ public:
     fTint = tint;
     this->markDamaged();
   }
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+  template <class P> void drawSelf(P &p, float alpha) {
     // Its shape as its State says: its corner radius, or each corner's own
     // -- as what it is behind says them.
     const BackdropShape shape = fState.fTail
         ? BackdropShape{skiff::scene::detail::boxWithTail(fState, fState.fBounds)}
         : BackdropShape{skiff::scene::detail::roundedBox(fState, fState.fBounds)};
-    drawFrom(fSource, canvas, fBlur, shape, alpha);
+    drawFrom(fSource, p, fBlur, shape, alpha);
     if (fTint) {
-      skia::SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setColor(*fTint);
-      paint.setAlphaf(paint.getAlphaf() * alpha);
-      drawBackdropShape(canvas, shape, paint);
+      fillBackdropShape(p, shape, *fTint, alpha);
     }
   }
 
@@ -509,7 +509,7 @@ public:
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+  template <class P> void drawSelf(P &p, float alpha) {
     fKeptThisFrame = false;
     const skia::SkRect &box = fState.fBounds;
     if (box.isEmpty()) {
@@ -520,25 +520,23 @@ public:
     const float coming = fFade.value();
     if (coming < 1.0f) {
       if (fOldGradient) {
-        skiff::paint::verticalGradient(canvas, box, fOldGradient->top, fOldGradient->bottom, alpha * (1.0f - coming));
+        p.verticalGradient(box, fOldGradient->top, fOldGradient->bottom, alpha * (1.0f - coming));
       }
       if (fOldDrawn) {
-        skia::SkPaint old;
-        old.setAlphaf(alpha * (1.0f - coming));
-        canvas->drawImageRect(fOldDrawn, box, skia::SkSamplingOptions(skia::SkFilterMode::kLinear), &old);
+        p.image(fOldDrawn.get(), box, alpha * (1.0f - coming));
       }
       alpha *= coming;
     }
     if (fGradient && !fPicture) {
-      skiff::paint::verticalGradient(canvas, box, fGradient->top, fGradient->bottom, alpha);
+      p.verticalGradient(box, fGradient->top, fGradient->bottom, alpha);
     }
     const bool patterned = fPattern && fPattern->width > 0.0f && fPattern->height > 0.0f && !fPattern->steps.empty();
     if (!fPicture && !patterned && !fFreeformImage) {
-      this->offerBackdrop(canvas, box);
+      this->offerBackdrop(p, box);
       return;
     }
     // At the device's pixels, where the canvas is scaled for them.
-    const float scale = std::max(1.0f, canvas->getTotalMatrix().getScaleX());
+    const float scale = p.deviceScale();
     const int width = static_cast<int>(std::ceil(box.width() * scale));
     const int height = static_cast<int>(std::ceil(box.height() * scale));
     if (!fDrawn || fDrawnWidth != width || fDrawnHeight != height) {
@@ -550,13 +548,11 @@ public:
     if (!fDrawn) {
       return;
     }
-    skia::SkPaint paint;
-    paint.setAlphaf(alpha);
     // Made at the device's pixels: put down as it is, not filtered again at
     // every repaint -- a bilinear pass over the whole wallpaper was most of
     // a frame on a software canvas.
-    canvas->drawImageRect(fDrawn, box, skia::SkSamplingOptions(skia::SkFilterMode::kNearest), &paint);
-    this->offerBackdrop(canvas, box);
+    p.image(fDrawn.get(), box, alpha, P::Sampling::sharp);
+    this->offerBackdrop(p, box);
   }
 
   // Frosted nodes' backdrop: this wallpaper blurred -- each amount made once
@@ -564,8 +560,8 @@ public:
   // pixels -- and where it is on the device. What frosts draws a piece of
   // it, one image; nothing is blurred at a frame. Made again where its size
   // changes, not where it only moves: a panel sliding moved it every frame.
-  void offerBackdrop(skia::SkCanvas *canvas, const skia::SkRect &box) {
-    const skia::SkRect device = canvas->getTotalMatrix().mapRect(box);
+  template <class P> void offerBackdrop(const P &p, const skia::SkRect &box) {
+    const skia::SkRect device = p.toDevice(box);
     const int fullWidth = std::max(1, static_cast<int>(std::ceil(device.width())));
     const int fullHeight = std::max(1, static_cast<int>(std::ceil(device.height())));
     if (!fBlurs || fBlurs->from().box.width() != box.width() || fBlurs->from().box.height() != box.height() ||

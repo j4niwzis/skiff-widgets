@@ -51,7 +51,7 @@ public:
   // an opacity, they were a second avatar under the first.
   void update(double) { this->showFallback(parts.picture.image() == nullptr); }
   // And as it is drawn: a picture found at a repaint takes the fallback away.
-  void drawSelf(skia::SkCanvas *, float) { this->showFallback(parts.picture.image() == nullptr); }
+  template <class P> void drawSelf(P &, float) { this->showFallback(parts.picture.image() == nullptr); }
 
 private:
   void showFallback(bool shown) {

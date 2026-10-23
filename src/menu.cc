@@ -48,12 +48,7 @@ public:
     fState.fWidth = p.measure(fLabel, kFontSize, fBold) + 2.0f * kPadX;
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  template <class P> void drawSelf(P &p, float alpha) {
     const skia::SkRect &bounds = fState.fBounds;
     const bool lit = fOpen || fState.fHovered;
     p.textIn(bounds, fLabel, kFontSize, lit || fBold ? fTheme.fText : fTheme.fTextDim,
@@ -215,19 +210,12 @@ public:
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+  template <class P> void drawSelf(P &p, float alpha) {
     const skia::SkRect box = fState.fBounds;
     const skia::SkRect bar =
         skia::SkRect::MakeXYWH(box.fLeft, box.fTop, box.width(), kBarHeight);
-    skiff::paint::verticalGradient(
-        canvas,
-        skia::SkRect::MakeXYWH(box.fLeft, bar.fBottom, box.width(), kShadow),
-        skia::colorSetARGB(90, 0, 0, 0), skia::colorSetARGB(0, 0, 0, 0), alpha);
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+    p.verticalGradient(skia::SkRect::MakeXYWH(box.fLeft, bar.fBottom, box.width(), kShadow), skia::colorSetARGB(90, 0, 0, 0),
+                       skia::colorSetARGB(0, 0, 0, 0), alpha);
     p.fillRounded(bar, 0.0f, fBarColour, alpha);
     if (fPopup.isEmpty()) {
       return;

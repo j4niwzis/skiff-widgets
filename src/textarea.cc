@@ -188,8 +188,9 @@ using FormatOf = typename format_of<Blocks>::type;
 // No blocks: every paragraph plain.
 struct NoBlocks {
   [[nodiscard]] static BlockLook look(std::string_view, std::size_t) { return {}; }
-  static void drawBehind(skia::SkCanvas *, const skiff::paint::Painter &, std::string_view, std::span<const ShownLine>,
-                         const skia::SkRect &, const Theme &, float, float) {}
+  template <class P>
+  static void drawBehind(const P &, std::string_view, std::span<const ShownLine>, const skia::SkRect &, const Theme &, float,
+                         float) {}
   [[nodiscard]] static std::optional<TextEdit> key(std::string_view, std::size_t, const skiff::scene::key::down &) {
     return std::nullopt;
   }
@@ -268,8 +269,8 @@ template <class Format>
 struct AnyBlocksOf {
   using format = Format;
   BlockLook (*fLook)(std::string_view, std::size_t) = &NoBlocks::look;
-  void (*fDrawBehind)(skia::SkCanvas *, const skiff::paint::Painter &, std::string_view, std::span<const ShownLine>,
-                      const skia::SkRect &, const Theme &, float, float) = &NoBlocks::drawBehind;
+  void (*fDrawBehind)(const skiff::paint::Painter &, std::string_view, std::span<const ShownLine>, const skia::SkRect &,
+                      const Theme &, float, float) = &NoBlocks::drawBehind;
   std::optional<TextEdit> (*fKey)(std::string_view, std::size_t, const skiff::scene::key::down &) = &NoBlocks::key;
   std::optional<TextEdit> (*fTyped)(std::string_view, std::size_t, std::string_view) = &NoBlocks::typed;
   RunLook (*fRunLook)(const Format &) = [](const Format &) { return RunLook{}; };
@@ -287,10 +288,11 @@ struct AnyBlocksOf {
             [](const FieldView<Format> &view) { return typedInBy(Blocks{}, view); }};
   }
   [[nodiscard]] BlockLook look(std::string_view text, std::size_t start) const { return fLook(text, start); }
-  void drawBehind(skia::SkCanvas *canvas, const skiff::paint::Painter &p, std::string_view text,
-                  std::span<const ShownLine> lines, const skia::SkRect &box, const Theme &theme, float size,
-                  float alpha) const {
-    fDrawBehind(canvas, p, text, lines, box, theme, size, alpha);
+  // Erased, the blocks draw with the scene's painter: the one they were
+  // erased for.
+  void drawBehind(const skiff::paint::Painter &p, std::string_view text, std::span<const ShownLine> lines,
+                  const skia::SkRect &box, const Theme &theme, float size, float alpha) const {
+    fDrawBehind(p, text, lines, box, theme, size, alpha);
   }
   [[nodiscard]] std::optional<TextEdit> key(std::string_view text, std::size_t caret,
                                             const skiff::scene::key::down &press) const {
@@ -794,15 +796,10 @@ public:
     return out;
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  template <class P> void drawSelf(P &p, float alpha) {
     const skia::SkRect box = this->textBox();
-    const int save = canvas->save();
-    canvas->clipRect(box, true);
+    p.save();
+    p.clipRect(box);
     const float lineHeight = fFontSize * kLineSpacing;
     const float shift = this->scrollX(p);
     if (fText.empty()) {
@@ -818,7 +815,7 @@ public:
         const float top = box.fTop + kPadY + static_cast<float>(i - first) * lineHeight;
         shownLines.push_back({this->lineStartOf(fLines[static_cast<std::size_t>(i)].fStart), top, top + lineHeight});
       }
-      fBlocks.drawBehind(canvas, p, fText, shownLines, box, fTheme, fFontSize, alpha);
+      fBlocks.drawBehind(p, fText, shownLines, box, fTheme, fFontSize, alpha);
     }
     for (int i = first; i < static_cast<int>(fLines.size()); ++i) {
       const Line &line = fLines[static_cast<std::size_t>(i)];
@@ -834,7 +831,7 @@ public:
         p.fillRounded(skia::SkRect::MakeLTRB(box.fLeft + x0, top, box.fLeft + x1, top + lineHeight),
                       2.0f, fTheme.fAccent, alpha * 0.35f);
       }
-      this->drawLine(canvas, p, line, box.fLeft - shift, top + fFontSize, alpha);
+      this->drawLine(p, line, box.fLeft - shift, top + fFontSize, alpha);
     }
     // Where the caret is, known while it is off too: a blink repaints it
     // there.
@@ -847,7 +844,7 @@ public:
         p.fillRect(fCaretRect, fTheme.fText, alpha);
       }
     }
-    canvas->restoreToCount(save);
+    p.restore();
   }
 
 private:
@@ -869,8 +866,8 @@ private:
   [[nodiscard]] float indentOf(const Line &line) const { return this->lookAt(line.fStart).indent; }
   // What a line is drawn and measured with: the monospace face where its
   // paragraph is code, else the field's own.
-  [[nodiscard]] skiff::paint::Painter painterFor(const skiff::paint::Painter &p, const Line &line) const {
-    return skiff::paint::Painter(p.canvas(), *skiff::paint::defaultFont(), this->lookAt(line.fStart).monospace);
+  template <class P> [[nodiscard]] P painterFor(const P &p, const Line &line) const {
+    return p.monospaced(this->lookAt(line.fStart).monospace);
   }
   // A line: its text, its atoms' pieces as pills in the accent.
   // Where the line an offset is on starts, after the newline before it.
@@ -878,9 +875,8 @@ private:
     const std::size_t before = at == 0 ? std::string::npos : fText.rfind('\n', at - 1);
     return before == std::string::npos ? 0 : before + 1;
   }
-  void drawLine(skia::SkCanvas *canvas, const skiff::paint::Painter &field, const Line &line, float left, float y,
-                float alpha) const {
-    const skiff::paint::Painter p = this->painterFor(field, line);
+  template <class P> void drawLine(const P &field, const Line &line, float left, float y, float alpha) const {
+    const P p = this->painterFor(field, line);
     std::size_t at = line.fStart;
     // The text up to `to`, run by run, each as its formats look.
     const auto plain = [&](std::size_t to) {
@@ -915,14 +911,12 @@ private:
           // Its picture, square, as a message's text draws one.
           if (const skia::Sp<skia::SkImage> *image = fPictures.picture(one.target); image && *image) {
             const float side = fFontSize * 1.2f;
-            skia::SkPaint paint;
-            paint.setAlphaf(alpha);
-            canvas->drawImageRect(*image, skia::SkRect::MakeXYWH(x + (width - side) * 0.5f, y - fFontSize * 0.98f, side, side),
-                                  skia::SkSamplingOptions(skia::SkFilterMode::kLinear), &paint);
+            p.image(image->get(), skia::SkRect::MakeXYWH(x + (width - side) * 0.5f, y - fFontSize * 0.98f, side, side),
+                    alpha);
           }
           continue;
         }
-        skiff::nodes::drawPill(canvas, p, x, y, width, fFontSize, fTheme.fAccent,
+        skiff::nodes::drawPill(p, x, y, width, fFontSize, fTheme.fAccent,
                                from == one.first ? fPictures.pill(one.target) : std::nullopt, alpha);
         p.text(this->shown(from, to), x, y, fFontSize, fTheme.fAccent, alpha);
       }
@@ -1027,13 +1021,13 @@ private:
     }
     return out;
   }
-  [[nodiscard]] float xAt(const skiff::paint::Painter &field, const Line &line, std::size_t offset) const {
-    const skiff::paint::Painter p = this->painterFor(field, line);
+  template <class P> [[nodiscard]] float xAt(const P &field, const Line &line, std::size_t offset) const {
+    const P p = this->painterFor(field, line);
     return this->indentOf(line) + this->widthOf(p, line.fStart, std::min(offset, line.fEnd));
   }
   // How wide the text between two offsets is drawn: run by run, each in its
   // face.
-  [[nodiscard]] float widthOf(const skiff::paint::Painter &p, std::size_t from, std::size_t to) const {
+  template <class P> [[nodiscard]] float widthOf(const P &p, std::size_t from, std::size_t to) const {
     if (fSpans.empty() || fMasked) {
       return p.measure(this->shown(from, to), fFontSize);
     }
@@ -1044,8 +1038,8 @@ private:
     return width;
   }
   // A run's painter: the monospace face where its look asks for it.
-  [[nodiscard]] skiff::paint::Painter painterOf(const skiff::paint::Painter &p, const RunLook &look) const {
-    return look.monospace ? skiff::paint::Painter(p.canvas(), *skiff::paint::defaultFont(), true) : p;
+  template <class P> [[nodiscard]] P painterOf(const P &p, const RunLook &look) const {
+    return look.monospace ? p.monospaced(true) : p;
   }
   // The spans over [from, to), cut to it, by offsets from `from`.
   [[nodiscard]] std::vector<Span> spansIn(std::size_t from, std::size_t to) const {
@@ -1148,7 +1142,7 @@ private:
                                   b.fBottom);
   }
   // How far a field of one line is scrolled, so the caret stays in it.
-  [[nodiscard]] float scrollX(const skiff::paint::Painter &p) const {
+  template <class P> [[nodiscard]] float scrollX(const P &p) const {
     if (!fSingle || fLines.empty()) {
       return 0.0f;
     }
@@ -1359,7 +1353,7 @@ private:
         fLines[static_cast<std::size_t>(std::clamp(row, 0, static_cast<int>(fLines.size()) - 1))];
     return this->offsetIn(p, line, x - this->textBox().fLeft + this->scrollX(p));
   }
-  [[nodiscard]] std::size_t offsetIn(const skiff::paint::Painter &p, const Line &line, float x) const {
+  template <class P> [[nodiscard]] std::size_t offsetIn(const P &p, const Line &line, float x) const {
     // Hidden marks share the visible start's x coordinate. Searching them
     // first chose a mark, so Up skipped empty quoted lines as if moving
     // backwards through their prefix. Search only insertion points.

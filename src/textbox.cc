@@ -276,40 +276,23 @@ public:
     reply.handle();
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  template <class P> void drawSelf(P &p, float alpha) {
     // As Telegram's and Element's fields: the plate the same focused or
     // not, a thin accent border and the caret saying it has the focus --
     // never the text on an accent fill.
     const bool active = this->selected() || this->focused();
     p.fillRounded(fState.fBounds, fTheme.fCorner, fTheme.fSurface, alpha);
     if (active) {
-      skia::SkPaint border;
-      border.setAntiAlias(true);
-      border.setStyle(skia::kStrokeStyle);
-      border.setStrokeWidth(1.5f);
-      border.setColor(fTheme.fAccent);
-      border.setAlphaf(alpha);
-      canvas->drawRoundRect(fState.fBounds.makeInset(0.75f, 0.75f), fTheme.fCorner, fTheme.fCorner, border);
+      p.strokeRounded(fState.fBounds.makeInset(0.75f, 0.75f), fTheme.fCorner, fTheme.fAccent, 1.5f, alpha);
     }
     const skia::SkColor textColour = fTheme.fText;
 
     float textLeft = fState.fBounds.fLeft + fTheme.fPaddingX;
     if (fSearchIcon) {
-      skia::SkPaint icon;
-      icon.setAntiAlias(true);
-      icon.setStyle(skia::kStrokeStyle);
-      icon.setStrokeWidth(1.8f);
-      icon.setColor(fTheme.fTextDim);
-      icon.setAlphaf(alpha);
       const float ix = fState.fBounds.fLeft + fTheme.fPaddingX + 6.0f;
       const float iy = fState.fBounds.centerY();
-      canvas->drawCircle(ix, iy - 1.0f, 5.5f, icon);
-      canvas->drawLine(ix + 4.0f, iy + 3.0f, ix + 8.0f, iy + 7.0f, icon);
+      p.strokeCircle(ix, iy - 1.0f, 5.5f, 1.8f, fTheme.fTextDim, alpha);
+      p.line(ix + 4.0f, iy + 3.0f, ix + 8.0f, iy + 7.0f, 1.8f, fTheme.fTextDim, alpha);
       textLeft = ix + 14.0f;
     }
 

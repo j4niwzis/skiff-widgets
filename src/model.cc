@@ -352,18 +352,14 @@ public:
   // The plate under the rows: from where they are as drawn -- a node moved
   // after its layout takes its children with it, and a box kept from the
   // layout would stay behind.
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    Base::drawSelf(canvas, alpha);
+  template <class P> void drawSelf(P &p, float alpha) {
+    Base::drawSelf(p, alpha);
     if (!this->open() || fRows.empty())
-      return;
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr)
       return;
     skia::SkRect plate = skia::SkRect::MakeEmpty();
     for (const DropdownRow &row : fRows)
       plate.join(row.fState.fBounds);
     plate.outset(kPlatePad, kPlatePad);
-    const skiff::paint::Painter p(canvas, *font);
     p.fillRounded(plate.makeOffset(0.0f, 3.0f), fLook.fPlateRadius, skia::colorSetARGB(70, 0, 0, 0), alpha);
     p.fillRounded(plate, fLook.fPlateRadius, fLook.fTheme.fSurface, alpha);
     p.strokeRounded(plate, fLook.fPlateRadius, fLook.fTheme.fAccent, 1.5f, alpha);

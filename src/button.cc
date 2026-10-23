@@ -139,12 +139,7 @@ public:
     fState.fWidth = p.measure(fLabel, fTheme.fFontSize) + 2.0f * fTheme.fPaddingX + 16.0f;
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(canvas, *font);
+  template <class P> void drawSelf(P &p, float alpha) {
     const bool hot = (fState.fHovered || this->showsFocus()) && fEnabled;
     skia::SkColor fill = fPrimary ? fTheme.fAccent : fTheme.fSurface;
     if (hot) {

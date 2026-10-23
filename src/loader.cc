@@ -71,31 +71,25 @@ public:
       this->markDamaged();
     }
   }
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
+  template <class P> void drawSelf(P &p, float alpha) {
     const skia::SkRect &box = fState.fBounds;
     const float line = std::max(2.0f, box.width() / 22.0f);
     const float inset = box.width() * 0.14f;
-    skia::SkPaint pen;
-    pen.setAntiAlias(true);
-    pen.setStyle(skia::kStrokeStyle);
-    pen.setStrokeWidth(line);
-    pen.setStrokeCap(skia::kRoundCap);
-    pen.setColor(skia::colorSetARGB(255, 255, 255, 255));
-    pen.setAlphaf(alpha);
+    const skiff::scene::Colour white = 0xffffffffu;
     if (fStopped) {
       // An arrow down: tdesktop's download mark.
       const float h = box.height() * 0.22f, w = box.width() * 0.14f;
-      canvas->drawLine(box.centerX(), box.centerY() - h, box.centerX(), box.centerY() + h, pen);
-      canvas->drawLine(box.centerX() - w, box.centerY() + h - w, box.centerX(), box.centerY() + h, pen);
-      canvas->drawLine(box.centerX() + w, box.centerY() + h - w, box.centerX(), box.centerY() + h, pen);
+      p.line(box.centerX(), box.centerY() - h, box.centerX(), box.centerY() + h, line, white, alpha);
+      p.line(box.centerX() - w, box.centerY() + h - w, box.centerX(), box.centerY() + h, line, white, alpha);
+      p.line(box.centerX() + w, box.centerY() + h - w, box.centerX(), box.centerY() + h, line, white, alpha);
       return;
     }
     const float sweep = fProgress ? std::max(12.0f, 360.0f * std::clamp(*fProgress, 0.0f, 1.0f)) : 90.0f;
-    canvas->drawArc(box.makeInset(inset, inset), fAngle - 90.0f, sweep, false, pen);
+    p.arc(box.makeInset(inset, inset), fAngle - 90.0f, sweep, line, white, alpha);
     // The cross.
     const float c = box.width() * 0.13f;
-    canvas->drawLine(box.centerX() - c, box.centerY() - c, box.centerX() + c, box.centerY() + c, pen);
-    canvas->drawLine(box.centerX() - c, box.centerY() + c, box.centerX() + c, box.centerY() - c, pen);
+    p.line(box.centerX() - c, box.centerY() - c, box.centerX() + c, box.centerY() + c, line, white, alpha);
+    p.line(box.centerX() - c, box.centerY() + c, box.centerX() + c, box.centerY() - c, line, white, alpha);
   }
 
 private:

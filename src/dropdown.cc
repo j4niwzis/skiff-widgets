@@ -69,13 +69,8 @@ public:
   float fLabelAlpha = 0.5f;
   float fValueAlpha = 0.95f;
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
+  template <class P> void drawSelf(P &p, float alpha) {
     const skia::SkRect &bounds = fState.fBounds;
-    const skiff::paint::Painter p(canvas, *font);
     p.fillRounded(bounds, fTheme.fCorner,
                   fState.fHovered || this->showsFocus() || fOpen
                       ? fTheme.fSurfaceHover
@@ -93,24 +88,16 @@ public:
                   std::max(0.0f, bounds.fRight - valueLeft - fChevronWidth),
                   fTheme.fFontSize, fTheme.fText, alpha * fValueAlpha);
 
-    skia::SkPaint triangle;
-    triangle.setAntiAlias(true);
-    triangle.setColor(fTheme.fText);
-    triangle.setAlphaf(alpha * 0.7f);
-    skia::SkPathBuilder path;
+    typename P::Path path;
     const float cx = bounds.fRight - fChevronWidth * 0.5f;
     const float cy = bounds.centerY();
     if (fOpen) {
-      path.moveTo(cx - 5.0f, cy + 2.5f);
-      path.lineTo(cx + 5.0f, cy + 2.5f);
-      path.lineTo(cx, cy - 3.5f);
+      path.moveTo(cx - 5.0f, cy + 2.5f).lineTo(cx + 5.0f, cy + 2.5f).lineTo(cx, cy - 3.5f);
     } else {
-      path.moveTo(cx - 5.0f, cy - 2.5f);
-      path.lineTo(cx + 5.0f, cy - 2.5f);
-      path.lineTo(cx, cy + 3.5f);
+      path.moveTo(cx - 5.0f, cy - 2.5f).lineTo(cx + 5.0f, cy - 2.5f).lineTo(cx, cy + 3.5f);
     }
     path.close();
-    canvas->drawPath(path.detach(), triangle);
+    p.fill(path, fTheme.fText, alpha * 0.7f);
   }
 
   [[nodiscard]] bool acceptsInput() const {
@@ -216,14 +203,9 @@ public:
   }
   [[nodiscard]] const std::string &label() const noexcept { return fLabel; }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
+  template <class P> void drawSelf(P &p, float alpha) {
     const Theme &theme = fLook.fTheme;
     const skia::SkRect &bounds = fState.fBounds;
-    const skiff::paint::Painter p(canvas, *font);
     if (fChosen || fState.fHovered || this->showsFocus()) {
       p.fillRounded(bounds, fLook.fRowRadius,
                     fChosen ? theme.fAccent : theme.fSurfaceHover, alpha);
@@ -370,13 +352,11 @@ public:
     }
   }
 
-  void drawSelf(skia::SkCanvas *canvas, float alpha) {
-    skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr || fRows.empty()) {
+  template <class P> void drawSelf(P &p, float alpha) {
+    if (fRows.empty()) {
       return;
     }
     // Its own backing plate, since what is underneath stays where it is.
-    const skiff::paint::Painter p(canvas, *font);
     p.fillRounded(fState.fBounds, fLook.fPlateRadius, fLook.fTheme.fSurface,
                   alpha);
     p.strokeRounded(fState.fBounds, fLook.fPlateRadius, fLook.fTheme.fAccent,
