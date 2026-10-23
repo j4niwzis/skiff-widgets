@@ -68,6 +68,8 @@ using skiff::web::Node;
          ";margin-top:-4px}\n";
   css += ".skiff-slider::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:" + text + "}\n";
   css += ".skiff-slider:focus-visible{outline:1.5px solid " + accent + ";outline-offset:2px;border-radius:7px}\n";
+  // The page's own rules -- placement, hover, tails -- after the widgets'.
+  css += pageCss();
   return css;
 }
 

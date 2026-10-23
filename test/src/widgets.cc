@@ -121,7 +121,8 @@ TEST(Dropdown, CompleteMenuSelectsOnPointerPressAfterMoving) {
   auto choose = [&](std::size_t index) { selected = static_cast<int>(index); };
   auto menu = widgets::ChoiceMenu(widgets::Theme{}, "Account",
       std::vector<std::string>{"Sign in to an account", "Create a new account"}, 0, choose);
-  auto s = sceneOf({.width = 300.0f}, std::move(menu));
+  // The menu fills its parent's width by default: a fixed width clears that (relativeSize kNone).
+  auto s = sceneOf({.width = 300.0f, .relativeSize = scene::axes::kNone}, std::move(menu));
   auto& moved = s->root().child;
   const auto viewport = skia::SkRect::MakeWH(320.0f, 300.0f);
   s->layoutIfNeeded(viewport);
