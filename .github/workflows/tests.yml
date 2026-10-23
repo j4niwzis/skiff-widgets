@@ -118,15 +118,17 @@ jobs:
         run: |
           sudo apt-get install -y libskia-dev libgl-dev generate-ninja \
             zlib1g-dev libpng-dev libjpeg-dev libfreetype-dev \
-            libharfbuzz-dev libexpat1-dev
+            libharfbuzz-dev libexpat1-dev libboost-dev
+      # Kept by what it was built with: a skiff built where Boost was found
+      # links Boost::pfr, and kept was taken up by a build that had none.
       - name: what was built before
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/cmake-everywhere/sources
             ~/.cache/cmake-everywhere/store
-          key: skiff-widgets-tests-${{ hashFiles('cmake/get_cme.cmake') }}-${{ github.sha }}
-          restore-keys: skiff-widgets-tests-${{ hashFiles('cmake/get_cme.cmake') }}-
+          key: skiff-widgets-tests-boost-${{ hashFiles('cmake/get_cme.cmake') }}-${{ github.sha }}
+          restore-keys: skiff-widgets-tests-boost-${{ hashFiles('cmake/get_cme.cmake') }}-
 
       - name: all of the tests, with Skia
         run: |
