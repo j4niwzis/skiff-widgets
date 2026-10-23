@@ -197,6 +197,17 @@ struct NoBlocks {
   // What is typed, as it is put in: as it is.
   [[nodiscard]] static std::optional<TextEdit> typed(std::string_view, std::size_t, std::string_view) { return std::nullopt; }
 };
+// What blocks draw under the lines in view, with the painter -- or, blocks
+// that take a Skia canvas beside it (a program's, written before the
+// painter drew everything), with its canvas too, as they did.
+template <class Blocks, class P>
+void drawBlocksBehind(const Blocks &blocks, const P &p, std::string_view text, std::span<const ShownLine> lines,
+                      const skia::SkRect &box, const Theme &theme, float size, float alpha) {
+  if constexpr (requires { blocks.drawBehind(p, text, lines, box, theme, size, alpha); })
+    blocks.drawBehind(p, text, lines, box, theme, size, alpha);
+  else
+    blocks.drawBehind(p.canvas(), p, text, lines, box, theme, size, alpha);
+}
 // What is typed, as blocks put it in: theirs where they say, as it is
 // where they have nothing to say.
 template <class Blocks>
@@ -280,7 +291,12 @@ struct AnyBlocksOf {
   std::optional<FieldChange<Format>> (*fTypedIn)(const FieldView<Format> &) =
       [](const FieldView<Format> &) { return std::optional<FieldChange<Format>>(); };
   template <class Blocks> [[nodiscard]] static AnyBlocksOf of() {
-    return {&Blocks::look, &Blocks::drawBehind, &Blocks::key,
+    return {&Blocks::look,
+            [](const skiff::paint::Painter &p, std::string_view text, std::span<const ShownLine> lines,
+               const skia::SkRect &box, const Theme &theme, float size, float alpha) {
+              drawBlocksBehind(Blocks{}, p, text, lines, box, theme, size, alpha);
+            },
+            &Blocks::key,
             [](std::string_view text, std::size_t caret, std::string_view typed) { return typedBy(Blocks{}, text, caret, typed); },
             [](const Format &format) { return runLookBy(Blocks{}, format); },
             [](const Format &format) { return growsBy(Blocks{}, format); },
@@ -815,7 +831,7 @@ public:
         const float top = box.fTop + kPadY + static_cast<float>(i - first) * lineHeight;
         shownLines.push_back({this->lineStartOf(fLines[static_cast<std::size_t>(i)].fStart), top, top + lineHeight});
       }
-      fBlocks.drawBehind(p, fText, shownLines, box, fTheme, fFontSize, alpha);
+      drawBlocksBehind(fBlocks, p, fText, shownLines, box, fTheme, fFontSize, alpha);
     }
     for (int i = first; i < static_cast<int>(fLines.size()); ++i) {
       const Line &line = fLines[static_cast<std::size_t>(i)];

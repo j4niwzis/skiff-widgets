@@ -213,7 +213,7 @@ inline void drawBackdrop(const P &p, const Backdrop &one, float blur, const Back
 // each was repainted). One drawn this frame is one shown: a hidden one is
 // not drawn.
 template <class P, std::ranges::forward_range Backdrops>
-  requires std::convertible_to<std::ranges::range_reference_t<Backdrops>, const Backdrop &>
+  requires(!std::is_pointer_v<P> && std::convertible_to<std::ranges::range_reference_t<Backdrops>, const Backdrop &>)
 void drawBackdrops(const P &p, Backdrops &&all, float blur, const BackdropShape &shape, float alpha) {
   const skia::SkRect on = p.toDevice(backdropBounds(shape));
   const std::uint64_t now = skiff::scene::work::frameNumber();
@@ -224,6 +224,14 @@ void drawBackdrops(const P &p, Backdrops &&all, float blur, const BackdropShape 
       under, [&](const Backdrop &one) { return one.opaque && one.device.contains(on.makeInset(0.5f, 0.5f)); });
   std::ranges::for_each(hiding.empty() ? under.begin() : hiding.begin(), under.end(),
                         [&](const Backdrop &one) { drawBackdrop(p, one, blur, shape, alpha); });
+}
+// On a Skia canvas, as a program's paint draws them under a fill: through
+// Skia's painter over it.
+template <std::ranges::forward_range Backdrops>
+  requires std::convertible_to<std::ranges::range_reference_t<Backdrops>, const Backdrop &>
+void drawBackdrops(skia::SkCanvas *canvas, Backdrops &&all, float blur, const BackdropShape &shape, float alpha) {
+  skia::SkFont none;
+  drawBackdrops(skiff::paint::Painter(canvas, none), std::forward<Backdrops>(all), blur, shape, alpha);
 }
 // Where backdrops come from: a value called as it is drawn, as an Image's
 // source is -- the program's, giving those its wallpapers offered, the
