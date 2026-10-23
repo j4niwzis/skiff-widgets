@@ -27,6 +27,7 @@ using skiff::web::handlers;
 using skiff::web::Named;
 using skiff::web::Text;
 using skiff::web::Box;
+using skiff::web::Canvas;
 using skiff::web::Page;
 using skiff::web::fire;
 

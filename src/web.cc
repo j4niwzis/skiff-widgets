@@ -32,7 +32,7 @@ using skiff::web::Node;
   const std::string chevron =
       "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='white'/%3E%3C/svg%3E\")";
   std::string css;
-  css += ".skiff-text{color:" + label + ";font:" + font + " system-ui,sans-serif;line-height:1.3}\n";
+  css += ".skiff-text{color:" + label + ";font:" + font + " system-ui,sans-serif;line-height:1.3}.skiff-canvas{display:block}\n";
   css += ".skiff-button{height:" + rowH + ";padding:0 " + padX + ";border:0;border-radius:" + corner + ";background:" + surface + ";color:" + text +
          ";font:" + font600 + ";cursor:pointer}\n";
   css += ".skiff-button:hover{background:" + hover + "}\n";

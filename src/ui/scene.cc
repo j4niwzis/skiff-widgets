@@ -28,6 +28,8 @@ using skiff::compose::local;
 using skiff::compose::handle;
 using skiff::compose::handlers;
 using skiff::compose::Named;
+// A node drawn by its own hand, as the page has one.
+using skiff::nodes::Canvas;
 
 // The controls, bound to a model, as skiff-widgets spells them.
 using skiff::widgets::Theme;
