@@ -196,6 +196,9 @@ public:
       p.text(fTabs[i].fLabel, box.fLeft, box.fTop + baseline, fFontSize, colour,
              alpha, active);
       if (active) {
+        // The theme's line under it, as the page's tab has it.
+        if (fTheme.fTabUnderline)
+          p.fillRect(skia::SkRect::MakeLTRB(box.fLeft, box.fBottom - 2.0f, box.fRight, box.fBottom), *fTheme.fTabUnderline, alpha);
         std::invoke(fDecorate, p, box, alpha);
       }
     }

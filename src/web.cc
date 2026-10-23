@@ -41,7 +41,8 @@ using skiff::web::Node;
   css += ".skiff-tabs{display:inline-flex;gap:14px;border-radius:3px}\n";
   css += ".skiff-tab{background:none;border:0;padding:4px 0;font:" + font + " system-ui,sans-serif;color:" + rgba(t.tabTextDim()) + ";cursor:pointer}\n";
   css += ".skiff-tab:hover{color:" + rgba(lighten(t.tabTextDim(), 0.2f)) + "}\n";
-  css += ".skiff-tab[aria-selected=true]{color:" + rgba(t.tabText()) + ";font-weight:600}\n";
+  css += ".skiff-tab[aria-selected=true]{color:" + rgba(t.tabText()) + ";font-weight:600" +
+         (t.fTabUnderline ? ";box-shadow:inset 0 -2px " + rgba(*t.fTabUnderline) : std::string()) + "}\n";
   css += ".skiff-tabs:focus-within{outline:1px solid " + accent + "}\n";
   css += ".skiff-textbox{height:" + rowH + ";box-sizing:border-box;padding:0 " + padX + ";border:1px solid transparent;border-radius:" + corner +
          ";background:" + surface + ";color:" + text + ";font:" + font + " system-ui,sans-serif;outline:none}\n";

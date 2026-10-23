@@ -35,6 +35,8 @@ struct Theme {
   // the scene's tabs and the page's alike.
   std::optional<skiff::scene::Colour> fTabText;
   std::optional<skiff::scene::Colour> fTabTextDim;
+  // A line under the tab chosen, of this colour; none unless it says so.
+  std::optional<skiff::scene::Colour> fTabUnderline;
   [[nodiscard]] skiff::scene::Colour tabText() const { return fTabText.value_or(fText); }
   [[nodiscard]] skiff::scene::Colour tabTextDim() const { return fTabTextDim.value_or(fTextDim); }
 
