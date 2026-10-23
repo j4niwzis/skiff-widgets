@@ -184,11 +184,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 list(APPEND skiff_widgets_built skiff_ui)
 
-  target_link_libraries(skiff_mazes PRIVATE skiff::ui)
-  set_target_properties(skiff_mazes PROPERTIES CXX_STANDARD 23 CXX_SCAN_FOR_MODULES ON)
-  target_include_directories(skiff_mazes PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/demo/mazes)
-endif()
-
 # ---- What this library is, said by the library ----
 if(COMMAND cme_declare_port)
   cme_declare_port(

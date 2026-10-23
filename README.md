@@ -50,9 +50,9 @@ auto settings() {
 }
 ```
 
-`demo/mazes` is that: a maze visualizer's settings, one `page.h`, a page
-under Emscripten (`SKIFF_WIDGETS_DEMO=ON` with `emcmake`, `index.html`) and a
-scene elsewhere.
+A maze visualizer written this way -- its settings, its canvas and its
+shapes as nodes bound to lists -- is a project of its own, built as modules
+against skiff.ui: a page under Emscripten, a scene elsewhere.
 
 ## Theming
 
