@@ -16,12 +16,43 @@ import skiff.widgets;           // or all of them
 | `skiff.widgets.textbox` | one line of editable text, with a caret that stops blinking off screen |
 | `skiff.widgets.button` | a labelled rectangle that calls something and lightens under the pointer |
 | `skiff.widgets.tabbar` | a row of text tabs, wrapping, with hover tracking and a hook for decorations |
+| `skiff.widgets.web` | the same controls on the page, as the browser's own elements: a toggle a checkbox, a slider a range input, a choice tabs or a select, dressed by the theme's CSS |
+| `skiff.ui` | the one vocabulary a UI is written in: answered by the scene (`skiff.compose` and the widgets) or by the page (`skiff.web` and its widgets), picked at configure time |
 
 Controls use the scene router rather than screen-owned drag state: sliders
 capture the pointer, buttons and tabs activate from the keyboard, and text
 boxes receive committed UTF-8 and provisional IME composition. Their semantic
 roles, labels, values, selection and focus are available through the root's
 accessibility tree.
+
+## One UI, two backends
+
+A screen written against `skiff.ui` is built for either: the words are the
+same -- `column`, `row`, `bound<>`, `scoped<>`, `handle<>`, `Text`, `Box`,
+`ToggleField`, `SliderField`, `TextField`, `ChoiceTabs`, `ChoiceList`,
+`SendButton`, `SKIFF_NAMED` -- and what answers them is one of two source
+files of the module. `SKIFF_UI_BACKEND=scene` is `skiff.compose` and the
+widgets on Skia; `SKIFF_UI_BACKEND=web` is `skiff.web` and
+`skiff.widgets.web`, the browser's own elements with the theme as CSS
+(`mountTheme`), each named view a `data-view` in the document. Left unsaid,
+it is the scene where Skia is built and the page where it is not.
+
+```cpp
+import skiff.ui;
+#include <skiff/named.h>
+using namespace skiff::ui;
+
+auto settings() {
+  return scoped<Root>(
+      SKIFF_NAMED(Grid, column(vbox(8.0f),
+          row(hbox(10.0f), Text("Columns"), bound<model::Field<&Grid::columns>>(SliderField<int>(1, 128))),
+          row(hbox(10.0f), Text("Visualize"), bound<model::Field<&Grid::visualize>>(ToggleField())))));
+}
+```
+
+`demo/mazes` is that: a maze visualizer's settings, one `page.h`, a page
+under Emscripten (`SKIFF_WIDGETS_DEMO=ON` with `emcmake`, `index.html`) and a
+scene elsewhere.
 
 ## Theming
 

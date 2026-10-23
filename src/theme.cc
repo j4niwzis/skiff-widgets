@@ -1,9 +1,7 @@
 export module skiff.widgets.theme;
 
 import std;
-import skia;
-import skiff.paint;
-import skiff.scene;
+import skiff.core;
 
 namespace skiff::widgets {
 using skiff::scene::Anchor;
@@ -16,17 +14,17 @@ using skiff::scene::Spec;
 export namespace skiff::widgets {
 
 struct Theme {
-  skia::SkColor fSurface = skia::colorSetARGB(255, 46, 53, 56);
-  skia::SkColor fSurfaceHover = skia::colorSetARGB(255, 57, 66, 70);
-  skia::SkColor fSurfaceActive = skia::colorSetARGB(255, 69, 79, 84);
-  skia::SkColor fText = skia::colorSetARGB(255, 255, 255, 255);
+  skiff::scene::Colour fSurface = 0xff2e3538u;
+  skiff::scene::Colour fSurfaceHover = 0xff394246u;
+  skiff::scene::Colour fSurfaceActive = 0xff454f54u;
+  skiff::scene::Colour fText = 0xffffffffu;
   // A caption beside a control, as distinct from the control's own text.
-  skia::SkColor fLabel = skia::colorSetARGB(255, 219, 233, 240);
+  skiff::scene::Colour fLabel = 0xffdbe9f0u;
   // Secondary -- icons, unselected tabs -- and fainter still, placeholders.
-  skia::SkColor fTextDim = skia::colorSetARGB(255, 178, 190, 196);
-  skia::SkColor fTextFaint = skia::colorSetARGB(255, 143, 156, 163);
-  skia::SkColor fAccent = skia::colorSetARGB(255, 102, 204, 255);
-  skia::SkColor fOnAccent = skia::colorSetARGB(255, 23, 26, 28);
+  skiff::scene::Colour fTextDim = 0xffb2bec4u;
+  skiff::scene::Colour fTextFaint = 0xff8f9ca3u;
+  skiff::scene::Colour fAccent = 0xff66ccffu;
+  skiff::scene::Colour fOnAccent = 0xff171a1cu;
 
   float fCorner = 5.0f;
   float fFontSize = 16.0f;
@@ -36,5 +34,12 @@ struct Theme {
   friend bool operator==(const Theme &, const Theme &) = default;
 };
 
+
+// The process-wide default a widget copies where it is given none: set once
+// at startup, by the program.
+[[nodiscard]] inline Theme &theme() {
+  static Theme kept;
+  return kept;
+}
 
 } // namespace skiff::widgets

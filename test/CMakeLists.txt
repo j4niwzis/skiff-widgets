@@ -28,10 +28,14 @@ CPMAddPackage(
     "gtest_build_samples OFF"
 )
 
-if(NOT TARGET skiff::widgets)
+if(NOT TARGET skiff::ui)
   CPMAddPackage(NAME skiff_widgets SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 endif()
 
+enable_testing()
+
+# The scene's widgets' tests, where the scene is built: they draw through Skia.
+if(TARGET skiff::widgets)
 add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   gtest
@@ -42,5 +46,13 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   CXX_EXTENSIONS OFF
   CXX_SCAN_FOR_MODULES ON)
 
-enable_testing()
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+endif()
+
+# The page's widgets' tests: skiff.widgets.web with skiff.web's in-memory document.
+if(TARGET skiff::widgets_web)
+  add_executable(skiffWidgetsWebTests ${CMAKE_CURRENT_SOURCE_DIR}/src/web.cc)
+  target_link_libraries(skiffWidgetsWebTests PRIVATE gtest gtest_main skiff::widgets_web)
+  set_target_properties(skiffWidgetsWebTests PROPERTIES CXX_STANDARD 23 CXX_EXTENSIONS OFF CXX_SCAN_FOR_MODULES ON)
+  add_test(NAME skiffWidgetsWebTests COMMAND skiffWidgetsWebTests)
+endif()
