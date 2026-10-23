@@ -39,9 +39,9 @@ using skiff::web::Node;
   css += ".skiff-button:focus-visible{outline:1.5px solid " + accent + ";outline-offset:-1.5px}\n";
   css += ".skiff-button[disabled]{opacity:.5;cursor:default}\n";
   css += ".skiff-tabs{display:inline-flex;gap:14px;border-radius:3px}\n";
-  css += ".skiff-tab{background:none;border:0;padding:4px 0;font:" + font + " system-ui,sans-serif;color:" + dim + ";cursor:pointer}\n";
-  css += ".skiff-tab:hover{color:" + rgba(lighten(t.fTextDim, 0.2f)) + "}\n";
-  css += ".skiff-tab[aria-selected=true]{color:" + text + ";font-weight:600}\n";
+  css += ".skiff-tab{background:none;border:0;padding:4px 0;font:" + font + " system-ui,sans-serif;color:" + rgba(t.tabTextDim()) + ";cursor:pointer}\n";
+  css += ".skiff-tab:hover{color:" + rgba(lighten(t.tabTextDim(), 0.2f)) + "}\n";
+  css += ".skiff-tab[aria-selected=true]{color:" + rgba(t.tabText()) + ";font-weight:600}\n";
   css += ".skiff-tabs:focus-within{outline:1px solid " + accent + "}\n";
   css += ".skiff-textbox{height:" + rowH + ";box-sizing:border-box;padding:0 " + padX + ";border:1px solid transparent;border-radius:" + corner +
          ";background:" + surface + ";color:" + text + ";font:" + font + " system-ui,sans-serif;outline:none}\n";

@@ -189,7 +189,7 @@ public:
     for (std::size_t i = 0; i < fTabs.size(); ++i) {
       const bool active = this->activeTab(fTabs[i]);
       const skia::SkRect box = this->tabBounds(i);
-      skia::SkColor colour = active ? fTheme.fText : fTheme.fTextDim;
+      skia::SkColor colour = active ? fTheme.tabText() : fTheme.tabTextDim();
       if (static_cast<int>(i) == fHotTab) {
         colour = skiff::paint::lighten(colour, 0.2f);
       }

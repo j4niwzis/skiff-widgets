@@ -30,6 +30,13 @@ struct Theme {
   float fFontSize = 16.0f;
   float fRowHeight = 40.0f;
   float fPaddingX = 12.0f;
+  // A tab's words, the one chosen and the rest: the text's own unless the
+  // theme says otherwise -- tabs on a light panel in a dark theme. Read by
+  // the scene's tabs and the page's alike.
+  std::optional<skiff::scene::Colour> fTabText;
+  std::optional<skiff::scene::Colour> fTabTextDim;
+  [[nodiscard]] skiff::scene::Colour tabText() const { return fTabText.value_or(fText); }
+  [[nodiscard]] skiff::scene::Colour tabTextDim() const { return fTabTextDim.value_or(fTextDim); }
 
   friend bool operator==(const Theme &, const Theme &) = default;
 };
