@@ -155,7 +155,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedDropdownButton(std::string label = {}, std::string value = {}, OnOpen onOpen = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedDropdownButton()
+    requires(std::default_initializable<OnOpen>)
+      : ErasedDropdownButton(std::string{}) {}
+  explicit ErasedDropdownButton(std::string label, std::string value = {}, OnOpen onOpen = {})
       : internal::DropdownButton<AnyActionFor<OnOpen>>(std::move(label), std::move(value), AnyActionFor<OnOpen>(std::move(onOpen))) {}
   ErasedDropdownButton(Theme theme, std::string label = {}, std::string value = {}, OnOpen onOpen = {})
       : internal::DropdownButton<AnyActionFor<OnOpen>>(std::move(theme), std::move(label), std::move(value), AnyActionFor<OnOpen>(std::move(onOpen))) {}
@@ -261,7 +268,14 @@ namespace internal {
 template <class OnChoose = skiff::scene::NoAction>
 class DropdownList : public skiff::scene::Node {
 public:
-  explicit DropdownList(OnChoose onChoose = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit DropdownList()
+    requires(std::default_initializable<OnChoose>)
+      : DropdownList(OnChoose{}) {}
+  explicit DropdownList(OnChoose onChoose)
       : fOnChoose(std::move(onChoose)) {
     fState.fAutoSizeAxes = skiff::scene::axes::kY;
     // Two above the first row, four below the last, which is where the plate
@@ -469,7 +483,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedDropdownList(OnChoose onChoose = {}) : internal::DropdownList<AnyCallFor<void(int), OnChoose>>(AnyCallFor<void(int), OnChoose>(std::move(onChoose))) {}
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedDropdownList()
+    requires(std::default_initializable<OnChoose>)
+      : ErasedDropdownList(OnChoose{}) {}
+  explicit ErasedDropdownList(OnChoose onChoose) : internal::DropdownList<AnyCallFor<void(int), OnChoose>>(AnyCallFor<void(int), OnChoose>(std::move(onChoose))) {}
 };
 // A complete dropdown with no pointers from its rows back to itself. The
 // current value and expanded state travel with the node when a page moves.

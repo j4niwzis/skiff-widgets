@@ -336,7 +336,14 @@ public:
   using Atom = TextAtom;
   using Format = FormatOf<Blocks>;
   using Span = TextSpan<Format>;
-  explicit TextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit TextArea()
+    requires(std::default_initializable<OnSubmit>)
+      : TextArea(std::string{}) {}
+  explicit TextArea(std::string placeholder, OnSubmit onSubmit = {})
       : fPlaceholder(std::move(placeholder)), fOnSubmit(std::move(onSubmit)) {
     fState.fHeight = this->heightFor(1);
     fState.setCursor(skiff::scene::cursor::text{});
@@ -1529,7 +1536,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedTextArea(std::string placeholder = {}, OnSubmit onSubmit = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedTextArea()
+    requires(std::default_initializable<OnSubmit>)
+      : ErasedTextArea(std::string{}) {}
+  explicit ErasedTextArea(std::string placeholder, OnSubmit onSubmit = {})
       : Base(std::move(placeholder), AnyCallFor<void(std::string_view), OnSubmit>(std::move(onSubmit))) {
     this->erase();
   }

@@ -340,7 +340,14 @@ public:
   ErasedTabBar(Theme theme, OnSelect onSelect, IsActive isActive = {}, Decorate decorate = {})
       : Base(std::move(theme), AnyCallFor<void(int), OnSelect>(std::move(onSelect)), AnyCallFor<bool(int), IsActive>(std::move(isActive)),
              AnyCallFor<void(skiff::paint::Painter &, const skia::SkRect &, float), Decorate>(std::move(decorate))) {}
-  explicit ErasedTabBar(OnSelect onSelect = {}, IsActive isActive = {}, Decorate decorate = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedTabBar()
+    requires(std::default_initializable<OnSelect> && std::default_initializable<IsActive> && std::default_initializable<Decorate>)
+      : ErasedTabBar(OnSelect{}) {}
+  explicit ErasedTabBar(OnSelect onSelect, IsActive isActive = {}, Decorate decorate = {})
       : Base(AnyCallFor<void(int), OnSelect>(std::move(onSelect)), AnyCallFor<bool(int), IsActive>(std::move(isActive)), AnyCallFor<void(skiff::paint::Painter &, const skia::SkRect &, float), Decorate>(std::move(decorate))) {}
 };
 // The tab bar: made for what it is given in a release build, over those

@@ -21,7 +21,14 @@ namespace internal {
 template <class OnChanged = skiff::scene::NoAction>
 class TextBox : public skiff::scene::Node {
 public:
-  explicit TextBox(std::string placeholder = {}, OnChanged onChanged = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit TextBox()
+    requires(std::default_initializable<OnChanged>)
+      : TextBox(std::string{}) {}
+  explicit TextBox(std::string placeholder, OnChanged onChanged = {})
       : fPlaceholder(std::move(placeholder)), fOnChanged(std::move(onChanged)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
@@ -457,7 +464,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedTextBox(std::string placeholder = {}, OnChanged onChanged = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedTextBox()
+    requires(std::default_initializable<OnChanged>)
+      : ErasedTextBox(std::string{}) {}
+  explicit ErasedTextBox(std::string placeholder, OnChanged onChanged = {})
       : Base(std::move(placeholder), AnyCallFor<void(std::string_view), OnChanged>(std::move(onChanged))) {}
   ErasedTextBox(Theme theme, std::string placeholder, OnChanged onChanged = {})
       : Base(std::move(theme), std::move(placeholder), AnyCallFor<void(std::string_view), OnChanged>(std::move(onChanged))) {}

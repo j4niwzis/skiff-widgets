@@ -449,7 +449,14 @@ private:
 // A switch, on or off, calling its action with its new state when flipped.
 template <class OnToggle = scene::NoAction> class Toggle : public Node {
 public:
-  explicit Toggle(OnToggle onToggle = {}, scene::Spec spec = {}) : fOnToggle(std::move(onToggle)) { fState.apply(spec); }
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit Toggle()
+    requires(std::default_initializable<OnToggle>)
+      : Toggle(OnToggle{}) {}
+  explicit Toggle(OnToggle onToggle, scene::Spec spec = {}) : fOnToggle(std::move(onToggle)) { fState.apply(spec); }
   Toggle(Theme theme, OnToggle onToggle) : Toggle(std::move(onToggle)) { fTheme = std::move(theme); }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
   void mounted() {
@@ -487,7 +494,14 @@ private:
 // masked for a password, with a search icon, or plain.
 template <class OnChanged = scene::NoAction> class TextBox : public Node {
 public:
-  explicit TextBox(std::string placeholder = {}, OnChanged onChanged = {}, scene::Spec spec = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit TextBox()
+    requires(std::default_initializable<OnChanged>)
+      : TextBox(std::string{}) {}
+  explicit TextBox(std::string placeholder, OnChanged onChanged = {}, scene::Spec spec = {})
       : fPlaceholder(std::move(placeholder)), fOnChanged(std::move(onChanged)) {
     fState.apply(spec);
   }
@@ -554,7 +568,14 @@ private:
 // plain here), its action called with the text as it changes.
 template <class OnChanged = scene::NoAction> class TextArea : public Node {
 public:
-  explicit TextArea(std::string placeholder = {}, OnChanged onChanged = {}, scene::Spec spec = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit TextArea()
+    requires(std::default_initializable<OnChanged>)
+      : TextArea(std::string{}) {}
+  explicit TextArea(std::string placeholder, OnChanged onChanged = {}, scene::Spec spec = {})
       : fPlaceholder(std::move(placeholder)), fOnChanged(std::move(onChanged)) {
     fState.apply(spec);
   }
@@ -631,7 +652,14 @@ public:
 // with the fraction as it moves (onSet) and when it is let go (onDone).
 template <class OnSet = scene::NoAction, class OnDone = scene::NoAction> class SliderBar : public Node {
 public:
-  explicit SliderBar(OnSet onSet = {}, OnDone onDone = {}, scene::Spec spec = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit SliderBar()
+    requires(std::default_initializable<OnSet> && std::default_initializable<OnDone>)
+      : SliderBar(OnSet{}) {}
+  explicit SliderBar(OnSet onSet, OnDone onDone = {}, scene::Spec spec = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
     fState.apply(spec);
   }
   SliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {}) : SliderBar(std::move(onSet), std::move(onDone)) { fTheme = std::move(theme); }
@@ -769,7 +797,14 @@ private:
 // share done where that is known; pressed, where it has an action (to stop).
 template <class OnPress = scene::NoAction> class RadialLoader : public Node {
 public:
-  explicit RadialLoader(float size = 44.0f, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit RadialLoader()
+    requires(std::default_initializable<OnPress>)
+      : RadialLoader(44.0f) {}
+  explicit RadialLoader(float size, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
     fState.apply({.width = size, .height = size, .cornerRadius = size * 0.5f});
   }
   void mounted() {
@@ -1023,7 +1058,14 @@ private:
 // patterns are its own drawing: here the pattern's colour stands for it.
 template <class Out = scene::NoAction> class Wallpaper : public Node {
 public:
-  explicit Wallpaper(Out out = {}) : fOut(std::move(out)) { fState.apply({.fill = true}); }
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit Wallpaper()
+    requires(std::default_initializable<Out>)
+      : Wallpaper(Out{}) {}
+  explicit Wallpaper(Out out) : fOut(std::move(out)) { fState.apply({.fill = true}); }
   void setOut(Out out) { fOut = std::move(out); }
   void setGradient(std::optional<scene::Gradient> gradient) {
     fGradient = gradient;

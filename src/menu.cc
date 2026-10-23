@@ -116,7 +116,14 @@ namespace internal {
 template <class OnChoose = skiff::scene::NoAction>
 class MenuBar : public skiff::scene::Node {
 public:
-  explicit MenuBar(OnChoose onChoose = {}) : fOnChoose(std::move(onChoose)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit MenuBar()
+    requires(std::default_initializable<OnChoose>)
+      : MenuBar(OnChoose{}) {}
+  explicit MenuBar(OnChoose onChoose) : fOnChoose(std::move(onChoose)) {
     fState.apply({.fill = true});
     fLook.fRowHeight = 30.0f;
     fLook.fFontSize = 14.0f;
@@ -356,7 +363,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedMenuBar(OnChoose onChoose = {}) : internal::MenuBar<AnyCallFor<void(int, int), OnChoose>>(AnyCallFor<void(int, int), OnChoose>(std::move(onChoose))) {}
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedMenuBar()
+    requires(std::default_initializable<OnChoose>)
+      : ErasedMenuBar(OnChoose{}) {}
+  explicit ErasedMenuBar(OnChoose onChoose) : internal::MenuBar<AnyCallFor<void(int, int), OnChoose>>(AnyCallFor<void(int, int), OnChoose>(std::move(onChoose))) {}
 };
 // The menu bar: made for its action in a release build, over an erased call
 // otherwise.

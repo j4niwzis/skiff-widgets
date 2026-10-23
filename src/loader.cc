@@ -19,7 +19,14 @@ export namespace skiff::widgets {
 namespace internal {
 template <class OnPress = skiff::scene::NoAction> class RadialLoader : public skiff::scene::Node {
 public:
-  explicit RadialLoader(float size = 44.0f, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit RadialLoader()
+    requires(std::default_initializable<OnPress>)
+      : RadialLoader(44.0f) {}
+  explicit RadialLoader(float size, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
     fState.apply({.width = size, .height = size, .cornerRadius = size * 0.5f,
                   .background = skia::colorSetARGB(0x54, 0, 0, 0)});
   }
@@ -118,7 +125,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedRadialLoader(float size = 44.0f, OnPress onPress = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedRadialLoader()
+    requires(std::default_initializable<OnPress>)
+      : ErasedRadialLoader(44.0f) {}
+  explicit ErasedRadialLoader(float size, OnPress onPress = {})
       : internal::RadialLoader<AnyActionFor<OnPress>>(size, AnyActionFor<OnPress>(std::move(onPress))) {}
 };
 // The loader: made for its action in a release build, over AnyAction

@@ -32,7 +32,14 @@ public:
   SliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {}) : SliderBar(std::move(onSet), std::move(onDone)) {
     fTheme = std::move(theme);
   }
-  explicit SliderBar(OnSet onSet = {}, OnDone onDone = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit SliderBar()
+    requires(std::default_initializable<OnSet> && std::default_initializable<OnDone>)
+      : SliderBar(OnSet{}) {}
+  explicit SliderBar(OnSet onSet, OnDone onDone = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     // As tall as the knob, the track in its middle: what the knob covers is
@@ -248,7 +255,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedSliderBar(OnSet onSet = {}, OnDone onDone = {})
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedSliderBar()
+    requires(std::default_initializable<OnSet> && std::default_initializable<OnDone>)
+      : ErasedSliderBar(OnSet{}) {}
+  explicit ErasedSliderBar(OnSet onSet, OnDone onDone = {})
       : Base(AnyCallFor<void(float), OnSet>(std::move(onSet)), AnyCallFor<void(float), OnDone>(std::move(onDone))) {}
   ErasedSliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {})
       : Base(std::move(theme), AnyCallFor<void(float), OnSet>(std::move(onSet)), AnyCallFor<void(float), OnDone>(std::move(onDone))) {}
@@ -266,7 +280,14 @@ class RangeSlider : public skiff::scene::Node {
 public:
   // Made in a theme: the one it is given, not one of the library's.
   RangeSlider(Theme theme, OnSet onSet) : RangeSlider(std::move(onSet)) { fTheme = std::move(theme); }
-  explicit RangeSlider(OnSet onSet = {}) : fOnSet(std::move(onSet)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit RangeSlider()
+    requires(std::default_initializable<OnSet>)
+      : RangeSlider(OnSet{}) {}
+  explicit RangeSlider(OnSet onSet) : fOnSet(std::move(onSet)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
     // The track is six pixels high, but a seven-pixel-radius knob is the
@@ -471,7 +492,14 @@ class Toggle : public skiff::scene::Node {
 public:
   // Made in a theme: the one it is given, not one of the library's.
   Toggle(Theme theme, OnToggle onToggle) : Toggle(std::move(onToggle)) { fTheme = std::move(theme); }
-  explicit Toggle(OnToggle onToggle = {}) : fOnToggle(std::move(onToggle)) {
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit Toggle()
+    requires(std::default_initializable<OnToggle>)
+      : Toggle(OnToggle{}) {}
+  explicit Toggle(OnToggle onToggle) : fOnToggle(std::move(onToggle)) {
     fState.fWidth = Look::width;
     fState.fHeight = Look::height;
   }
@@ -611,7 +639,14 @@ public:
   using Base::onKey;
   using Base::onText;
   using Base::onSemantic;
-  explicit ErasedToggle(OnToggle onToggle = {}) : internal::Toggle<AnyActionFor<OnToggle>>(AnyActionFor<OnToggle>(std::move(onToggle))) {}
+  // Made with nothing only where what it calls is made so: a lambda that
+  // captures is not, and its default argument, read as libstdc++ asks
+  // whether this is (a tuple of them: a column holding it), was an error
+  // there rather than an answer.
+  explicit ErasedToggle()
+    requires(std::default_initializable<OnToggle>)
+      : ErasedToggle(OnToggle{}) {}
+  explicit ErasedToggle(OnToggle onToggle) : internal::Toggle<AnyActionFor<OnToggle>>(AnyActionFor<OnToggle>(std::move(onToggle))) {}
   ErasedToggle(Theme theme, OnToggle onToggle) : internal::Toggle<AnyActionFor<OnToggle>>(std::move(theme), AnyActionFor<OnToggle>(std::move(onToggle))) {}
 };
 // The switch: made for its action in a release build, over an erased one
