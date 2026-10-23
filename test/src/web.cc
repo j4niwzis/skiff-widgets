@@ -29,8 +29,18 @@ struct Settings {
 struct Root {
   model::Tracked<Settings> settings;
 };
+struct Lines {
+  std::vector<std::string> all;
+};
+struct Count2 {
+  model::Tracked<Lines> lines;
+};
+struct Said2 {
+  std::string text;
+};
 struct Reactions {};
 using Model = model::Model<Root, Reactions>;
+using Model2 = model::Model<Count2, Reactions>;
 
 auto settingsPage() {
   return column(vbox(8.0f, {.padding = scene::Margin::all(12.0f)}),
@@ -123,6 +133,108 @@ struct CountRoot {
   model::Tracked<Count> count;
 };
 using CountModel = model::Model<CountRoot, Reactions>;
+
+// The scene's widgets on the page, each given an action of the test's own.
+struct Said {
+  int clicks = 0;
+  bool on = false;
+  std::string typed, sent;
+  float fraction = -1.0f, done = -1.0f;
+  std::size_t chosen = 99;
+};
+struct Shot {
+  std::shared_ptr<scene::Picture> fPicture;
+  const scene::Picture *operator()() const { return fPicture.get(); }
+};
+auto widgetsPage(Said &said) {
+  return column(vbox(8.0f), Button("Go", [&said] { ++said.clicks; }), Toggle([&said](bool on) { said.on = on; }),
+                TextBox("Search", [&said](std::string_view text) { said.typed = std::string(text); }),
+                SliderBar([&said](float at) { said.fraction = at; }, [&said](float at) { said.done = at; }),
+                ChoiceMenu(widgets::theme(), "Sort", std::vector<std::string>{"Artist", "Title"}, 1, [&said](std::size_t index) { said.chosen = index; }),
+                Pill("new", Pill::Look{.plate = 0xff336699u}), Avatar("AB", 40.0f, Shot{std::make_shared<scene::Picture>()}, scene::Gradient{0xff000000u, 0xffffffffu}),
+                RadialLoader(32.0f), Collapsible<Text>("more"));
+}
+
+TEST(Web, TheScenesWidgetsAreTheBrowsersControlsCallingTheirActions) {
+  dom::reset();
+  Said said;
+  Model m;
+  Page page(widgetsPage(said), m);
+  page.mount();
+  std::string html = dom::dump(dom::root());
+  EXPECT_NE(html.find("<button class=\"skiff-button\" type=\"button\">Go</button>"), std::string::npos) << html;
+  EXPECT_NE(html.find("<input class=\"skiff-toggle\" type=\"checkbox\""), std::string::npos) << html;
+  EXPECT_NE(html.find("placeholder=\"Search\""), std::string::npos) << html;
+  EXPECT_NE(html.find("<label class=\"skiff-menu\""), std::string::npos) << html;
+  EXPECT_NE(html.find("<span class=\"skiff-pill\""), std::string::npos) << html;
+  EXPECT_NE(html.find("class=\"skiff-avatar\""), std::string::npos) << html;
+  EXPECT_NE(html.find("class=\"skiff-loader\""), std::string::npos) << html;
+  // Closed, the collapsible's child is not shown.
+  auto &more = std::get<8>(page.root().fParts);
+  EXPECT_NE(dom::dump(more.element()).find("display:none;"), std::string::npos) << dom::dump(more.element());
+  more.setOpen(true);
+  page.sync();
+  EXPECT_EQ(dom::dump(more.element()).find("display:none"), std::string::npos) << dom::dump(more.element());
+
+  auto &button = std::get<0>(page.root().fParts);
+  fire(page, button.element(), "click", "");
+  EXPECT_EQ(said.clicks, 1);
+  button.setPrimary(true);
+  page.sync();
+  EXPECT_NE(dom::dump(button.element()).find("class=\"skiff-button skiff-primary\""), std::string::npos) << dom::dump(button.element());
+
+  auto &toggle = std::get<1>(page.root().fParts);
+  fire(page, toggle.element(), "change", "");
+  EXPECT_TRUE(said.on);
+  EXPECT_TRUE(toggle.on());
+
+  auto &box = std::get<2>(page.root().fParts);
+  fire(page, box.element(), "input", "bob");
+  EXPECT_EQ(said.typed, "bob");
+  EXPECT_EQ(box.text(), "bob");
+  box.setMasked(true);
+  page.sync();
+  EXPECT_NE(dom::dump(box.element()).find("type=\"password\""), std::string::npos);
+
+  auto &bar = std::get<3>(page.root().fParts);
+  fire(page, bar.element(), "input", "250");
+  EXPECT_NEAR(said.fraction, 0.25f, 0.001f);
+  EXPECT_FLOAT_EQ(said.done, -1.0f);
+  fire(page, bar.element(), "change", "500");
+  EXPECT_NEAR(said.done, 0.5f, 0.001f);
+
+  auto &menu = std::get<4>(page.root().fParts);
+  dom::Handle select = dom::kNone;
+  menu.handles([&](dom::Handle h) { if (h != menu.element()) select = h; });
+  ASSERT_NE(select, dom::kNone);
+  fire(page, select, "change", "0");
+  EXPECT_EQ(said.chosen, 0u);
+  EXPECT_EQ(menu.current, 0u);
+}
+
+TEST(Web, AnAreaSubmitsOnEnterAndIsEmptiedForTheNext) {
+  dom::reset();
+  Model2 m;
+  Page page(scoped<Count2>(handlers(handle<Said2>([](const Said2 &sent, const auto &) {
+                             return model::over<Lines>([sent](Lines l) {
+                               l.all.push_back(sent.text);
+                               return l;
+                             });
+                           })),
+                           column(SubmitArea<Said2>("Write"))),
+            m);
+  page.mount();
+  auto &area = std::get<0>(page.root().fParts);
+  fire(page, area.element(), "input", "hello");
+  EXPECT_EQ(area.text(), "hello");
+  fire(page, area.element(), "keydown", "Enter|10");  // Shift+Enter: a line, not a submission
+  EXPECT_EQ(m.look<Lines>()->all.size(), 0u);
+  fire(page, area.element(), "keydown", "Enter|00");
+  ASSERT_EQ(m.look<Lines>()->all.size(), 1u);
+  EXPECT_EQ(m.look<Lines>()->all[0], "hello");
+  EXPECT_TRUE(area.text().empty());
+  EXPECT_NE(dom::dump(area.element()).find("<textarea class=\"skiff-textarea\""), std::string::npos) << dom::dump(area.element());
+}
 
 TEST(Web, AButtonSendsItsEventToTheScopeAroundIt) {
   dom::reset();

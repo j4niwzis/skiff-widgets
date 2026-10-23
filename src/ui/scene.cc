@@ -52,6 +52,21 @@ using skiff::widgets::TextField;
 using skiff::widgets::ChoiceTabs;
 using skiff::widgets::ChoiceList;
 using skiff::widgets::SendButton;
+using skiff::nodes::Flow;
+using skiff::nodes::ScrollContainer;
+using skiff::nodes::Image;
+using skiff::nodes::Icon;
+using skiff::widgets::Button;
+using skiff::widgets::Toggle;
+using skiff::widgets::TextBox;
+using skiff::widgets::TextArea;
+using skiff::widgets::SubmitArea;
+using skiff::widgets::SliderBar;
+using skiff::widgets::Pill;
+using skiff::widgets::Avatar;
+using skiff::widgets::RadialLoader;
+using skiff::widgets::ChoiceMenu;
+using skiff::widgets::Collapsible;
 
 // A text and a box said by a Spec alone, as the page says them: the font
 // and the colour the theme's, the box's colour its background.

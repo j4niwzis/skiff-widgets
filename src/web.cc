@@ -68,6 +68,23 @@ using skiff::web::Node;
          ";margin-top:-4px}\n";
   css += ".skiff-slider::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:" + text + "}\n";
   css += ".skiff-slider:focus-visible{outline:1.5px solid " + accent + ";outline-offset:2px;border-radius:7px}\n";
+  css += ".skiff-button.skiff-primary{background:" + accent + ";color:" + onAccent + "}\n";
+  css += ".skiff-button.skiff-outlined{background:transparent;box-shadow:inset 0 0 0 2px " + accent + "}\n";
+  css += ".skiff-textarea{box-sizing:border-box;min-height:60px;padding:6px " + padX + ";border:1px solid transparent;border-radius:" + corner +
+         ";background:" + surface + ";color:" + text + ";font:" + font + " system-ui,sans-serif;resize:vertical;outline:none}\n";
+  css += ".skiff-textarea::placeholder{color:" + faint + "}\n";
+  css += ".skiff-textarea:focus{border-color:" + accent + "}\n";
+  css += ".skiff-textbox.skiff-search{padding-left:28px;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' "
+         "height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E\");"
+         "background-repeat:no-repeat;background-position:8px center}\n";
+  css += ".skiff-pill{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;font:" + font + " system-ui,sans-serif}\n";
+  css += ".skiff-avatar{position:relative;display:block;overflow:hidden;flex:none}\n";
+  css += ".skiff-avatar>img{display:block;width:100%;height:100%}\n";
+  css += ".skiff-loader{display:inline-block;flex:none;border-radius:50%;background:conic-gradient(" + accent +
+         " var(--skiff-done,25%),rgba(255,255,255,.18) 0);animation:skiff-spin 1s linear infinite}\n";
+  css += ".skiff-loader[data-stopped]{animation:none}\n@keyframes skiff-spin{to{transform:rotate(360deg)}}\n";
+  css += ".skiff-menu{display:inline-flex;align-items:center;gap:8px;color:" + label + ";font:" + font + " system-ui,sans-serif}\n";
+  css += ".skiff-scroll{min-height:0}\n";
   // The page's own rules -- placement, hover, tails -- after the widgets'.
   css += pageCss();
   return css;
@@ -340,5 +357,530 @@ private:
   E fEvent;
 };
 
+
+// ---- the scene's widgets, on the browser's elements ----------------------------
+//
+// The same names and the same words as skiff.widgets (setLabel, setOn,
+// setText, setFraction...), each a native control; an action given is
+// called as the press is delivered (onPress), with what the control is now.
+
+namespace detail {
+// An action called, with its answer where it has one (the binding takes it).
+template <class Action, class... Args> auto called(Action &action, Args &&...args) {
+  if constexpr (std::same_as<std::remove_cvref_t<Action>, scene::NoAction>) {
+    return;
+  } else if constexpr (std::is_void_v<std::invoke_result_t<Action &, Args...>>) {
+    std::invoke(action, std::forward<Args>(args)...);
+  } else {
+    return std::invoke(action, std::forward<Args>(args)...);
+  }
+}
+} // namespace detail
+
+// A button with a label, calling its action when clicked; primary (the
+// accent's), outlined, or plain; enabled or not.
+template <class Action = scene::NoAction> class Button : public Node {
+public:
+  explicit Button(std::string label, Action action = {}, scene::Spec spec = {}) : fLabel(std::move(label)), fAction(std::move(action)) {
+    fState.apply(spec);
+  }
+  Button(Theme theme, std::string label, Action action = {}) : Button(std::move(label), std::move(action)) { fTheme = std::move(theme); }
+  [[nodiscard]] static constexpr std::string_view tag() { return "button"; }
+  void mounted() {
+    dom::attr(fState.fHandle, "class", "skiff-button");
+    dom::attr(fState.fHandle, "type", "button");
+    dom::listen(fState.fHandle, "click");
+  }
+  void sync() {
+    std::string classes = "skiff-button";
+    if (fPrimary) classes += " skiff-primary";
+    if (fOutlined) classes += " skiff-outlined";
+    dom::attr(fState.fHandle, "class", classes);
+    dom::text(fState.fHandle, fLabel);
+  }
+  void setTheme(Theme value) {
+    fTheme = std::move(value);
+    markDirty();
+  }
+  void setLabel(std::string label) {
+    if (label != fLabel) {
+      fLabel = std::move(label);
+      markDirty();
+    }
+  }
+  [[nodiscard]] const std::string &label() const noexcept { return fLabel; }
+  void setPrimary(bool primary) {
+    if (primary != fPrimary) {
+      fPrimary = primary;
+      markDirty();
+    }
+  }
+  [[nodiscard]] bool primary() const noexcept { return fPrimary; }
+  void setOutlined(bool outlined) {
+    if (outlined != fOutlined) {
+      fOutlined = outlined;
+      markDirty();
+    }
+  }
+  [[nodiscard]] bool outlined() const noexcept { return fOutlined; }
+  void setAccent(scene::Colour accent) {
+    fAccent = accent;
+    markDirty();
+  }
+  void setEnabled(bool enabled) { setDisabled(!enabled); }
+  [[nodiscard]] bool enabled() const noexcept { return !disabled(); }
+  [[nodiscard]] Action &action() noexcept { return fAction; }
+  bool onDom(dom::Handle, std::string_view event, std::string_view) { return event == "click" && !disabled(); }
+  auto onPress() { return detail::called(fAction); }
+
+private:
+  std::string fLabel;
+  Action fAction;
+  Theme fTheme = theme();
+  std::optional<scene::Colour> fAccent;
+  bool fPrimary = false;
+  bool fOutlined = false;
+};
+
+// A switch, on or off, calling its action with its new state when flipped.
+template <class OnToggle = scene::NoAction> class Toggle : public Node {
+public:
+  explicit Toggle(OnToggle onToggle = {}, scene::Spec spec = {}) : fOnToggle(std::move(onToggle)) { fState.apply(spec); }
+  Toggle(Theme theme, OnToggle onToggle) : Toggle(std::move(onToggle)) { fTheme = std::move(theme); }
+  [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
+  void mounted() {
+    dom::attr(fState.fHandle, "class", "skiff-toggle");
+    dom::attr(fState.fHandle, "type", "checkbox");
+    dom::listen(fState.fHandle, "change");
+  }
+  void sync() { dom::checked(fState.fHandle, fOn); }
+  void setTheme(Theme value) {
+    fTheme = std::move(value);
+    markDirty();
+  }
+  void setOn(bool on) {
+    if (on != fOn) {
+      fOn = on;
+      markDirty();
+    }
+  }
+  void setOnNow(bool on) { setOn(on); }
+  [[nodiscard]] bool on() const noexcept { return fOn; }
+  bool onDom(dom::Handle, std::string_view event, std::string_view) {
+    if (event != "change") return false;
+    fOn = !fOn;
+    return true;
+  }
+  auto onPress() { return detail::called(fOnToggle, fOn); }
+
+private:
+  OnToggle fOnToggle;
+  Theme fTheme = theme();
+  bool fOn = false;
+};
+
+// A line of text typed into, its action called with the text as it changes;
+// masked for a password, with a search icon, or plain.
+template <class OnChanged = scene::NoAction> class TextBox : public Node {
+public:
+  explicit TextBox(std::string placeholder = {}, OnChanged onChanged = {}, scene::Spec spec = {})
+      : fPlaceholder(std::move(placeholder)), fOnChanged(std::move(onChanged)) {
+    fState.apply(spec);
+  }
+  TextBox(Theme theme, std::string placeholder, OnChanged onChanged = {}) : TextBox(std::move(placeholder), std::move(onChanged)) {
+    fTheme = std::move(theme);
+  }
+  [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
+  void mounted() {
+    if (!fPlaceholder.empty()) dom::attr(fState.fHandle, "placeholder", fPlaceholder);
+    dom::listen(fState.fHandle, "input");
+  }
+  void sync() {
+    dom::attr(fState.fHandle, "class", fSearch ? "skiff-textbox skiff-search" : "skiff-textbox");
+    dom::attr(fState.fHandle, "type", fMasked ? "password" : "text");
+    if (fTrailingInset > 0.0f) dom::style(fState.fHandle, "padding-right", px(fTrailingInset));
+    dom::value(fState.fHandle, fText);
+  }
+  void setTheme(Theme value) {
+    fTheme = std::move(value);
+    markDirty();
+  }
+  void setSearchIcon(bool enabled) {
+    if (enabled != fSearch) {
+      fSearch = enabled;
+      markDirty();
+    }
+  }
+  void setMasked(bool masked) {
+    if (masked != fMasked) {
+      fMasked = masked;
+      markDirty();
+    }
+  }
+  [[nodiscard]] bool masked() const noexcept { return fMasked; }
+  void setTrailingInset(float inset) {
+    fTrailingInset = inset;
+    markDirty();
+  }
+  void setText(std::string text) {
+    if (text != fText) {
+      fText = std::move(text);
+      markDirty();
+    }
+  }
+  [[nodiscard]] const std::string &text() const noexcept { return fText; }
+  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+    if (event != "input" && event != "change") return false;
+    fText = std::string(value);
+    return true;
+  }
+  auto onPress() { return detail::called(fOnChanged, std::string_view(fText)); }
+
+private:
+  std::string fText;
+  std::string fPlaceholder;
+  OnChanged fOnChanged;
+  Theme fTheme = theme();
+  float fTrailingInset = 0.0f;
+  bool fMasked = false;
+  bool fSearch = false;
+};
+
+// A text area: lines of plain text typed into (the scene's rich text is
+// plain here), its action called with the text as it changes.
+template <class OnChanged = scene::NoAction> class TextArea : public Node {
+public:
+  explicit TextArea(std::string placeholder = {}, OnChanged onChanged = {}, scene::Spec spec = {})
+      : fPlaceholder(std::move(placeholder)), fOnChanged(std::move(onChanged)) {
+    fState.apply(spec);
+  }
+  TextArea(Theme theme, std::string placeholder, OnChanged onChanged = {}) : TextArea(std::move(placeholder), std::move(onChanged)) {
+    fTheme = std::move(theme);
+  }
+  [[nodiscard]] static constexpr std::string_view tag() { return "textarea"; }
+  void mounted() {
+    dom::attr(fState.fHandle, "class", "skiff-textarea");
+    if (!fPlaceholder.empty()) dom::attr(fState.fHandle, "placeholder", fPlaceholder);
+    dom::listen(fState.fHandle, "input");
+    dom::listen(fState.fHandle, "keydown");
+  }
+  void sync() { dom::value(fState.fHandle, fText); }
+  void setTheme(Theme value) {
+    fTheme = std::move(value);
+    markDirty();
+  }
+  void setText(std::string text) {
+    if (text != fText) {
+      fText = std::move(text);
+      markDirty();
+    }
+  }
+  [[nodiscard]] std::string_view plainText() const noexcept { return fText; }
+  [[nodiscard]] const std::string &text() const noexcept { return fText; }
+  // Typed into: the text as it is. Enter alone (keydown "Enter|00"): a
+  // submission, for an area that sends (SubmitArea); Shift+Enter is a line.
+  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+    if (event == "input" || event == "change") {
+      fText = std::string(value);
+      fSubmitted = false;
+      return true;
+    }
+    if (event == "keydown" && value.starts_with("Enter|0")) {
+      fSubmitted = true;
+      return true;
+    }
+    return false;
+  }
+  [[nodiscard]] bool submitted() const noexcept { return fSubmitted; }
+  auto onPress() { return detail::called(fOnChanged, std::string_view(fText)); }
+
+protected:
+  std::string fText;
+  bool fSubmitted = false;
+
+private:
+  std::string fPlaceholder;
+  OnChanged fOnChanged;
+  Theme fTheme = theme();
+};
+
+// A text area sending an E made of its text each time it is submitted --
+// a message from a composer -- and emptied for the next.
+template <class E> class SubmitArea : public TextArea<> {
+public:
+  using Out = model::Types<E>;
+  explicit SubmitArea(std::string placeholder = {}, scene::Spec spec = {}) : TextArea<>(std::move(placeholder), {}, spec) {}
+  SubmitArea(Theme theme, std::string placeholder) : TextArea<>(std::move(theme), std::move(placeholder)) {}
+  bool onDom(dom::Handle target, std::string_view event, std::string_view value) {
+    TextArea<>::onDom(target, event, value);
+    return event == "keydown" && this->submitted();
+  }
+  E onPress() {
+    E sent{std::string(this->plainText())};
+    this->setText({});
+    this->fSubmitted = false;
+    return sent;
+  }
+};
+
+// A slider's bar: a fraction of its length, dragged, its actions called
+// with the fraction as it moves (onSet) and when it is let go (onDone).
+template <class OnSet = scene::NoAction, class OnDone = scene::NoAction> class SliderBar : public Node {
+public:
+  explicit SliderBar(OnSet onSet = {}, OnDone onDone = {}, scene::Spec spec = {}) : fOnSet(std::move(onSet)), fOnDone(std::move(onDone)) {
+    fState.apply(spec);
+  }
+  SliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {}) : SliderBar(std::move(onSet), std::move(onDone)) { fTheme = std::move(theme); }
+  [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
+  void mounted() {
+    dom::attr(fState.fHandle, "class", "skiff-slider");
+    dom::attr(fState.fHandle, "type", "range");
+    dom::attr(fState.fHandle, "min", "0");
+    dom::attr(fState.fHandle, "max", std::to_string(kSteps));
+    dom::attr(fState.fHandle, "step", "1");
+    dom::listen(fState.fHandle, "input");
+    dom::listen(fState.fHandle, "change");
+  }
+  void sync() {
+    dom::value(fState.fHandle, std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
+    const std::string at = number(fFraction * 100.0f) + "%";
+    dom::style(fState.fHandle, "--skiff-track",
+               "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
+  }
+  void setTheme(Theme value) {
+    fTheme = std::move(value);
+    markDirty();
+  }
+  void setFraction(float fraction) {
+    fraction = std::clamp(fraction, 0.0f, 1.0f);
+    if (fraction != fFraction) {
+      fFraction = fraction;
+      markDirty();
+    }
+  }
+  [[nodiscard]] float fraction() const noexcept { return fFraction; }
+  [[nodiscard]] bool dragging() const noexcept { return false; }
+  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+    if (event != "input" && event != "change") return false;
+    int steps = 0;
+    std::from_chars(value.data(), value.data() + value.size(), steps);
+    fFraction = std::clamp(static_cast<float>(steps) / kSteps, 0.0f, 1.0f);
+    if (event == "change") detail::called(fOnDone, fFraction);
+    return true;
+  }
+  auto onPress() { return detail::called(fOnSet, fFraction); }
+
+private:
+  static constexpr int kSteps = 1000;
+  OnSet fOnSet;
+  OnDone fOnDone;
+  Theme fTheme = theme();
+  float fFraction = 0.0f;
+};
+
+// A pill: a word on a plate of its own colour.
+class Pill : public Node {
+public:
+  struct Look {
+    scene::Colour plate = 0;
+    scene::Colour text = 0xffffffffu;
+    float size = 12.0f;  // the text's
+    float height = 20.0f;
+    float padX = 8.0f;
+    bool bold = false;
+  };
+  Pill(std::string label, Look look) : fLabel(std::move(label)), fLook(look) {
+    fState.apply({.height = look.height,
+                  .minWidth = look.height,
+                  .padding = {0.0f, look.padX, 0.0f, look.padX},
+                  .cornerRadius = look.height * 0.5f,
+                  .background = look.plate});
+  }
+  [[nodiscard]] static constexpr std::string_view tag() { return "span"; }
+  void mounted() { dom::attr(fState.fHandle, "class", "skiff-pill"); }
+  void sync() {
+    dom::text(fState.fHandle, fLabel);
+    dom::style(fState.fHandle, "color", rgba(fLook.text));
+    dom::style(fState.fHandle, "font-size", px(fLook.size));
+    dom::style(fState.fHandle, "font-weight", fLook.bold ? "600" : "400");
+  }
+  void setLabel(std::string label) {
+    if (label != fLabel) {
+      fLabel = std::move(label);
+      markDirty();
+    }
+  }
+  [[nodiscard]] const std::string &label() const noexcept { return fLabel; }
+  void setColours(scene::Colour plate, scene::Colour text) {
+    fLook.plate = plate;
+    fLook.text = text;
+    fState.apply({.background = plate});
+    markDirty();
+  }
+
+private:
+  std::string fLabel;
+  Look fLook;
+};
+
+// An avatar: a round picture, or -- until there is one -- initials on a
+// gradient of two colours.
+template <PictureSource Source> class Avatar : public Node {
+public:
+  struct parts_t {
+    Text initials;
+    Image<Source> picture;
+  } parts;
+  Avatar(std::string initials, float size, Source picture, scene::Gradient colours)
+      : parts{.initials = Text(std::move(initials), {.place = scene::anchor::kCentre}), .picture = Image<Source>(std::move(picture))}, fColours(colours) {
+    fState.apply({.width = size, .height = size, .cornerRadius = size * 0.5f, .gradient = colours, .masking = true});
+    parts.picture.apply({.fillX = true, .fillY = true, .cornerRadius = size * 0.5f});
+    parts.picture.keepBox();
+    fSize = size;
+  }
+  void mounted() { dom::attr(fState.fHandle, "class", "skiff-avatar"); }
+  [[nodiscard]] bool wantsSync() const { return true; }
+  void sync() {
+    const bool pictured = parts.picture.picture() != nullptr;
+    parts.initials.setVisible(!pictured);
+    parts.picture.setVisible(pictured);
+    dom::style(parts.initials.element(), "font-size", px(fSize * 0.4f));
+    dom::style(parts.initials.element(), "font-weight", "600");
+    dom::style(parts.initials.element(), "color", "rgba(255,255,255,1)");
+  }
+  void show(std::string initials, Source picture, scene::Gradient colours) {
+    parts.initials.setText(std::move(initials));
+    parts.picture.setSource(std::move(picture));
+    fColours = colours;
+    fState.apply({.gradient = colours});
+    markDirty();
+  }
+
+private:
+  scene::Gradient fColours;
+  float fSize = 0.0f;
+};
+
+// A round loader: turning while something is awaited, a ring filled to the
+// share done where that is known; pressed, where it has an action (to stop).
+template <class OnPress = scene::NoAction> class RadialLoader : public Node {
+public:
+  explicit RadialLoader(float size = 44.0f, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
+    fState.apply({.width = size, .height = size, .cornerRadius = size * 0.5f});
+  }
+  void mounted() {
+    dom::attr(fState.fHandle, "class", "skiff-loader");
+    if constexpr (!std::same_as<OnPress, scene::NoAction>) dom::listen(fState.fHandle, "click");
+  }
+  void sync() {
+    if (fProgress) dom::style(fState.fHandle, "--skiff-done", number(std::clamp(*fProgress, 0.0f, 1.0f) * 100.0f) + "%");
+    else dom::style(fState.fHandle, "--skiff-done", "");
+    if (fStopped) dom::attr(fState.fHandle, "data-stopped", "");
+    else dom::dropAttr(fState.fHandle, "data-stopped");
+  }
+  void setProgress(std::optional<float> done) {
+    fProgress = done;
+    markDirty();
+  }
+  void setStopped(bool stopped) {
+    if (fStopped != stopped) {
+      fStopped = stopped;
+      markDirty();
+    }
+  }
+  bool onDom(dom::Handle, std::string_view event, std::string_view) { return event == "click"; }
+  auto onPress() { return detail::called(fOnPress); }
+
+private:
+  OnPress fOnPress;
+  std::optional<float> fProgress;
+  bool fStopped = false;
+};
+
+// A menu of choices under a label: a select, its action called with the
+// index chosen. The scene's words: names, current, picked, open (never, here:
+// the browser opens its own).
+template <class Choose> class ChoiceMenu : public Node {
+public:
+  Choose choose;
+  std::vector<std::string> names;
+  std::size_t current = 0, picked = 0;
+  bool open = false;
+  ChoiceMenu(Theme theme, std::string label, std::vector<std::string> options, std::size_t selected, Choose action)
+      : choose(std::move(action)), names(std::move(options)), current(selected), fLabel(std::move(label)), fTheme(std::move(theme)) {}
+  [[nodiscard]] static constexpr std::string_view tag() { return "label"; }
+  void mounted() {
+    dom::attr(fState.fHandle, "class", "skiff-menu");
+    fCaption = dom::create("span");
+    dom::text(fCaption, fLabel);
+    dom::append(fState.fHandle, fCaption);
+    fSelect = dom::create("select");
+    dom::attr(fSelect, "class", "skiff-select");
+    for (std::size_t i = 0; i < names.size(); ++i) {
+      const dom::Handle option = dom::create("option");
+      dom::attr(option, "value", std::to_string(i));
+      dom::text(option, names[i]);
+      dom::append(fSelect, option);
+    }
+    dom::listen(fSelect, "change");
+    dom::append(fState.fHandle, fSelect);
+  }
+  template <class F> void handles(F &&f) {
+    f(fState.fHandle);
+    f(fSelect);
+  }
+  void sync() {
+    if (fCaption != dom::kNone) dom::text(fCaption, fLabel);
+    if (fSelect != dom::kNone) dom::value(fSelect, current < names.size() ? std::to_string(current) : std::string());
+  }
+  void read(std::size_t selected) {
+    if (selected != current) {
+      current = selected;
+      markDirty();
+    }
+  }
+  void show_options(bool) {}
+  bool onDom(dom::Handle target, std::string_view event, std::string_view value) {
+    if (target != fSelect || (event != "change" && event != "input")) return false;
+    int index = -1;
+    std::from_chars(value.data(), value.data() + value.size(), index);
+    if (index < 0 || static_cast<std::size_t>(index) >= names.size()) return false;
+    picked = static_cast<std::size_t>(index);
+    read(picked);
+    return true;
+  }
+  auto onPress() { return detail::called(choose, picked); }
+
+private:
+  std::string fLabel;
+  Theme fTheme;
+  dom::Handle fCaption = dom::kNone;
+  dom::Handle fSelect = dom::kNone;
+};
+
+// A child shown or hidden: open, it is there; closed, it is not (the scene
+// slides it; the page shows and hides).
+template <class Child> class Collapsible : public Node {
+public:
+  template <class... Args> explicit Collapsible(Args &&...args) : fChild(std::forward<Args>(args)...) {}
+  [[nodiscard]] Child &child() noexcept { return fChild; }
+  [[nodiscard]] const Child &child() const noexcept { return fChild; }
+  [[nodiscard]] bool isOpen() const noexcept { return fOpen; }
+  void setOpen(bool open) {
+    if (open != fOpen) {
+      fOpen = open;
+      markDirty();
+    }
+  }
+  void setOpenNow(bool open) { setOpen(open); }
+  [[nodiscard]] bool settling() const noexcept { return false; }
+  void forEachChild(auto &&f) { f(fChild); }
+  void mounted() { dom::attr(fState.fHandle, "class", "skiff-collapsible"); }
+  void sync() { dom::style(fState.fHandle, "display", fOpen ? "" : "none"); }
+
+private:
+  Child fChild;
+  bool fOpen = false;
+};
 
 } // namespace skiff::widgets::web
