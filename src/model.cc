@@ -310,6 +310,8 @@ public:
   }
   [[nodiscard]] int current() const noexcept { return fCurrent; }
   [[nodiscard]] int chosen() const noexcept { return fChosen; }
+  // The rows, as laid out: for a test or a shot of the open list.
+  [[nodiscard]] std::span<const DropdownRow> rows() const noexcept { return fRows; }
 
   // Opened or closed: the rows shown or hidden, the whole raised over the
   // window while open.

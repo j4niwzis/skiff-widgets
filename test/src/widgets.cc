@@ -154,6 +154,56 @@ TEST(Dropdown, LegacyClickCannotReplayAChoiceWhenOpeningTheHeader) {
   EXPECT_EQ(menu.current, 1u);
 }
 
+struct BelowHits {
+  int *hits;
+  void operator()() const { ++*hits; }
+};
+// A list over a button right under it: the rows hang over the button.
+struct ComboScreen : scene::Node {
+  widgets::ChoiceList<int> list;
+  widgets::Button<BelowHits> below;
+  explicit ComboScreen(int *hits)
+      : list(std::vector<std::pair<std::string, int>>{{"One", 1}, {"Two", 2}, {"Three", 3}}, {.width = 160.0f}),
+        below(scene::make<widgets::Button<BelowHits>>({.y = 30.0f, .width = 160.0f}, "Below", BelowHits{hits})) {}
+  void forEachChild(auto &&f) {
+    f(list);
+    f(below);
+  }
+};
+
+TEST(ChoiceList, OpensOverWhatIsBelowAndChoosesOnARow) {
+  int hits = 0;
+  scene::Scene<ComboScreen> s{std::in_place, &hits};
+  s.state().apply({.fill = true});
+  const auto viewport = skia::SkRect::MakeWH(240.0f, 240.0f);
+  s.layoutIfNeeded(viewport);
+  auto &list = s.root().list;
+  list.read(2);
+  EXPECT_EQ(list.current(), 1);
+  EXPECT_FALSE(list.open());
+  // The button opens it, on the click.
+  const auto head = list.bounds();
+  EXPECT_TRUE(s.click(head.centerX(), head.centerY()));
+  EXPECT_TRUE(list.open());
+  s.layoutIfNeeded(viewport);
+  ASSERT_EQ(list.rows().size(), 3u);
+  const auto row = list.rows()[0].bounds();
+  EXPECT_GT(row.fTop, head.fBottom);
+  // The row is over the button right below -- and, raised, it is the row
+  // that takes the press there, not the button.
+  EXPECT_TRUE(skia::SkRect::Intersects(row, s.root().below.bounds()));
+  EXPECT_TRUE(s.dispatchPointer(scene::pointer::down{row.centerX(), row.centerY()}));
+  EXPECT_EQ(list.current(), 0);
+  EXPECT_EQ(list.chosen(), 0);
+  EXPECT_FALSE(list.open());
+  EXPECT_TRUE(s.dispatchPointer(scene::pointer::up{row.centerX(), row.centerY()}));
+  EXPECT_EQ(hits, 0);
+  // Closed, the same point is the button's.
+  s.layoutIfNeeded(viewport);
+  EXPECT_TRUE(s.click(row.centerX(), row.centerY()));
+  EXPECT_EQ(hits, 1);
+}
+
 TEST(Button, PrimaryAndEnabledStateOwnDamageAndInput) {
   int clicks = 0;
   // Named by its action's type: a widget's public name is an alias, which a
