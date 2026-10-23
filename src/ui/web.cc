@@ -30,6 +30,8 @@ using skiff::web::Box;
 using skiff::web::Canvas;
 using skiff::web::Figure;
 using skiff::web::figure;
+using skiff::web::Layer;
+using skiff::web::layer;
 using skiff::web::Polygon;
 using skiff::web::Polyline;
 using skiff::web::Line;

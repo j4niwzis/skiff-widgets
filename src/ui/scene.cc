@@ -33,6 +33,9 @@ using skiff::nodes::Canvas;
 // Shapes as nodes in a figure, and a list of them: as the page has them.
 using skiff::nodes::Figure;
 using skiff::nodes::figure;
+// Shapes together as one node: the scene's Group, children in its box.
+template <class... Parts> using Layer = skiff::scene::Group<Parts...>;
+template <class... Parts> [[nodiscard]] Layer<Parts...> layer(Parts... parts) { return Layer<Parts...>(std::move(parts)...); }
 using skiff::nodes::Polygon;
 using skiff::nodes::Polyline;
 using skiff::nodes::Line;
