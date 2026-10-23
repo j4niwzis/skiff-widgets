@@ -35,6 +35,13 @@ struct Theme {
   // the scene's tabs and the page's alike.
   std::optional<skiff::scene::Colour> fTabText;
   std::optional<skiff::scene::Colour> fTabTextDim;
+  // A tab's words' size -- the theme's font unless it says otherwise --
+  // the room above and below them, and the gap between one tab and the
+  // next: the scene's tabs laid out by them, the page's styled by them.
+  std::optional<float> fTabFontSize;
+  float fTabPadding = 4.0f;
+  float fTabGap = 14.0f;
+  [[nodiscard]] float tabFontSize() const { return fTabFontSize.value_or(fFontSize); }
   // A line under the tab chosen, of this colour; none unless it says so.
   std::optional<skiff::scene::Colour> fTabUnderline;
   [[nodiscard]] skiff::scene::Colour tabText() const { return fTabText.value_or(fText); }

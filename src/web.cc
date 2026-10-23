@@ -38,8 +38,9 @@ using skiff::web::Node;
   css += ".skiff-button:hover{background:" + hover + "}\n";
   css += ".skiff-button:focus-visible{outline:1.5px solid " + accent + ";outline-offset:-1.5px}\n";
   css += ".skiff-button[disabled]{opacity:.5;cursor:default}\n";
-  css += ".skiff-tabs{display:inline-flex;gap:14px;border-radius:3px}\n";
-  css += ".skiff-tab{background:none;border:0;padding:4px 0;font:" + font + " system-ui,sans-serif;color:" + rgba(t.tabTextDim()) + ";cursor:pointer}\n";
+  css += ".skiff-tabs{display:inline-flex;gap:" + px(t.fTabGap) + ";border-radius:3px}\n";
+  css += ".skiff-tab{background:none;border:0;padding:" + px(t.fTabPadding) + " 0;font:" + px(t.tabFontSize()) +
+         " system-ui,sans-serif;color:" + rgba(t.tabTextDim()) + ";cursor:pointer}\n";
   css += ".skiff-tab:hover{color:" + rgba(lighten(t.tabTextDim(), 0.2f)) + "}\n";
   css += ".skiff-tab[aria-selected=true]{color:" + rgba(t.tabText()) + ";font-weight:600" +
          (t.fTabUnderline ? ";box-shadow:inset 0 -2px " + rgba(*t.fTabUnderline) : std::string()) + "}\n";

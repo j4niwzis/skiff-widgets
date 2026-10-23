@@ -39,6 +39,7 @@ public:
   TabBar(Theme theme, OnSelect onSelect, IsActive isActive = {}, Decorate decorate = {})
       : TabBar(std::move(onSelect), std::move(isActive), std::move(decorate)) {
     fTheme = std::move(theme);
+    this->metricsOfTheme();
   }
   explicit TabBar(OnSelect onSelect = {}, IsActive isActive = {},
                   Decorate decorate = {})
@@ -46,10 +47,14 @@ public:
         fDecorate(std::move(decorate)) {
     fState.fRelativeSizeAxes = skiff::scene::axes::kX;
     fState.fWidth = 1.0f;
+    this->metricsOfTheme();
   }
 
   void setTheme(Theme value) {
     fTheme = std::move(value);
+    if (!fOwnMetrics)
+      this->metricsOfTheme();
+    this->invalidateLayout();
     this->markDamaged();
   }
   void setHeader(std::string header, float width) {
@@ -60,6 +65,7 @@ public:
     }
   }
   void setMetrics(float fontSize, float lineHeight, float spacing) {
+    fOwnMetrics = true;
     if (fontSize != fFontSize || lineHeight != fLineHeight ||
         spacing != fSpacing) {
       fFontSize = fontSize;
@@ -130,6 +136,15 @@ public:
   Theme fTheme = theme();
   std::string fHeader;       // caption in the column to the left, may be empty
   float fHeaderWidth = 0.0f; // where the tabs start, header or no header
+  // The tabs' metrics: the theme's (metricsOfTheme), unless said
+  // (setMetrics) -- as the page's tabs take theirs from the theme's CSS.
+  bool fOwnMetrics = false;
+  void metricsOfTheme() {
+    fFontSize = fTheme.tabFontSize();
+    fLineHeight = std::round(fFontSize * 1.25f + 2.0f * fTheme.fTabPadding);
+    fBaseline = fTheme.fTabPadding + fFontSize * 0.95f;
+    fSpacing = fTheme.fTabGap;
+  }
   float fFontSize = 13.0f;
   float fLineHeight = 16.0f;
   float fBaseline = -1.0f; // within a line box; below zero means fFontSize
