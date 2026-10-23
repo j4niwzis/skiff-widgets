@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 4.1.1 FATAL_ERROR)
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/import-std.cmake)
+# C++23 for every library this build makes, not only for its own targets:
+# what it builds of its dependencies -- Boost.PFR as a module, splice --
+# imports std, which CMake gives a target only at C++23.
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 23)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # The widget set that sits on skiff: ready-made controls a screen is built
@@ -60,7 +66,7 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::core)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 069979755b9e23572caa1ec55cbd0dcc4f431edc
+    GIT_TAG 4b083440b87eeacbfacead4e4f22f142214024eb
     VERSION 0.1.0
   )
 endif()
