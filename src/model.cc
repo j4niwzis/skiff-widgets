@@ -228,8 +228,11 @@ template <class T> struct ChoiceRowField : skiff::compose::Stacked {
 template <class T> class ChoiceTabs : public internal::TabBar<Answers> {
 public:
   using Choice = std::pair<std::string, T>;
-  explicit ChoiceTabs(std::vector<Choice> choices)
+  // With a Spec of its own, as the page's ChoiceTabs takes one: one source
+  // for either.
+  explicit ChoiceTabs(std::vector<Choice> choices, scene::Spec spec = {})
       : internal::TabBar<Answers>(Answers{}), fChoices(std::move(choices)) {
+    this->apply(spec);
     std::vector<typename internal::TabBar<Answers>::Tab> tabs;
     for (std::size_t i = 0; i < fChoices.size(); ++i)
       tabs.push_back({fChoices[i].first, static_cast<int>(i)});
@@ -257,8 +260,9 @@ private:
 template <class T> class ChoiceList : public internal::DropdownList<Answers> {
 public:
   using Choice = std::pair<std::string, T>;
-  explicit ChoiceList(std::vector<Choice> choices)
+  explicit ChoiceList(std::vector<Choice> choices, scene::Spec spec = {})
       : internal::DropdownList<Answers>(Answers{}), fChoices(std::move(choices)) {
+    this->apply(spec);
     this->setOptions(std::ranges::to<std::vector>(std::views::transform(fChoices, &Choice::first)));
   }
 
