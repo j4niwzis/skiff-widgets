@@ -173,7 +173,7 @@ private:
 // A radio row showing one choice of a model part. Input and semantics
 // agree with the value read; the screen never updates its mark by hand.
 template <class T> struct ChoiceRowField : skiff::compose::Stacked {
-  Theme fTheme;
+  Theme fTheme = theme();
   T fChoice;
   struct Parts {
     skiff::nodes::Text label;

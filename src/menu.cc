@@ -96,7 +96,7 @@ private:
   static constexpr float kPadX = 12.0f;
 
   std::string fLabel;
-  Theme fTheme;
+  Theme fTheme = theme();
   bool fOpen = false;
   bool fBold = false;
 };

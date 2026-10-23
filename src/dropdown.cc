@@ -61,7 +61,7 @@ public:
   }
   [[nodiscard]] bool open() const noexcept { return fOpen; }
 
-  Theme fTheme;
+  Theme fTheme = theme();
   float fLabelWidth = 52.0f;
   float fChevronWidth = 22.0f;
   float fStrokeWidth = 1.0f;
@@ -176,7 +176,7 @@ using DropdownButton = std::conditional_t<kErasedActions && !AnswersPresses<OnOp
 // How a dropdown list's rows look: the list's, copied to each row so a row
 // draws itself without reaching back to the list.
 struct DropdownLook {
-  Theme fTheme;
+  Theme fTheme = theme();
   float fRowHeight = 24.0f;
   float fFontSize = 13.0f;
   float fPlateRadius = 6.0f;

@@ -892,7 +892,7 @@ public:
 
 private:
   std::string fLabel;
-  Theme fTheme;
+  Theme fTheme = theme();
   dom::Handle fCaption = dom::kNone;
   dom::Handle fSelect = dom::kNone;
 };

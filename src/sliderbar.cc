@@ -73,7 +73,7 @@ public:
   }
 
 public:
-  Theme fTheme;
+  Theme fTheme = theme();
   float fKnobRadius = 7.0f;
   float fTrackRadius = 3.0f;
 
@@ -354,7 +354,7 @@ public:
   void endDrag() noexcept { fDragging = -1; }
 
 public:
-  Theme fTheme;
+  Theme fTheme = theme();
   float fKnobRadius = 7.0f;
   float fTrackHeight = 6.0f;
   float fTrackRadius = 3.0f;
@@ -530,7 +530,7 @@ public:
   [[nodiscard]] bool on() const noexcept { return fOn; }
 
 public:
-  Theme fTheme;
+  Theme fTheme = theme();
   float fKnobRadius = 8.0f;
   float fKnobInset = 11.0f;
   float fTauMs = 60.0f;

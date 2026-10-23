@@ -81,7 +81,7 @@ public:
   }
 
 public:
-  Theme fTheme;
+  Theme fTheme = theme();
   [[nodiscard]] bool acceptsInput() const { return fEnabled; }
   [[nodiscard]] bool hoverChangesAppearance() const { return fEnabled; }
   [[nodiscard]] bool focusChangesAppearance() const { return fEnabled; }

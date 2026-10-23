@@ -127,7 +127,7 @@ public:
   }
 
 public:
-  Theme fTheme;
+  Theme fTheme = theme();
   std::string fHeader;       // caption in the column to the left, may be empty
   float fHeaderWidth = 0.0f; // where the tabs start, header or no header
   float fFontSize = 13.0f;

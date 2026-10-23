@@ -97,7 +97,7 @@ public:
   }
 
 public:
-  Theme fTheme;
+  Theme fTheme = theme();
   std::string fPlaceholder;
   bool fSearchIcon = false; // the magnifier lazer puts in its search boxes
   bool fMasked = false;

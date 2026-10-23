@@ -1499,7 +1499,7 @@ public:
 private:
   [[no_unique_address]] Pictures fPictures{};
   [[no_unique_address]] Blocks fBlocks{};
-  Theme fTheme;
+  Theme fTheme = theme();
   float fFontSize = 15.0f;
   int fMaxLines = 8;
   bool fSingle = false;
