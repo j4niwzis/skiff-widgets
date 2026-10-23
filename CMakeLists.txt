@@ -60,7 +60,7 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::core)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 99c03d7d9da43ca037d6e012bdabe30a86b06a2a
+    GIT_TAG 7296837a25f2f019308a0ad4151fd4265aec8d6e
     VERSION 0.1.0
   )
 endif()
@@ -89,8 +89,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   else()
     set(skiff_emscripten_flags -fexceptions -pthread -msimd128)
   endif()
-  string(JOIN " " skiff_widgets_emscripten_flags ${skiff_emscripten_flags})
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${skiff_widgets_emscripten_flags}")
+  # Only what is missing, as skiff adds it: the same flag said twice is
+  # another set of flags, and another std module made for it.
+  set(skiff_widgets_emscripten_missing)
+  foreach(flag IN LISTS skiff_emscripten_flags)
+    if(NOT " ${CMAKE_CXX_FLAGS} " MATCHES " ${flag} ")
+      list(APPEND skiff_widgets_emscripten_missing ${flag})
+    endif()
+  endforeach()
+  if(skiff_widgets_emscripten_missing)
+    string(JOIN " " skiff_widgets_emscripten_flags ${skiff_widgets_emscripten_missing})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${skiff_widgets_emscripten_flags}")
+  endif()
 endif()
 
 # skiff.widgets.theme: the palette and metrics every widget draws from, with
@@ -103,9 +113,6 @@ target_sources(skiff_widgets_theme PUBLIC
 set_target_properties(skiff_widgets_theme PROPERTIES EXPORT_NAME widgets_theme CXX_STANDARD 23)
 target_compile_features(skiff_widgets_theme PUBLIC cxx_std_23)
 target_link_libraries(skiff_widgets_theme PUBLIC skiff::core)
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_compile_options(skiff_widgets_theme PRIVATE ${skiff_emscripten_flags})
-endif()
 set(skiff_widgets_built skiff_widgets_theme)
 
 # The widgets on the scene, where the scene is built.
@@ -128,9 +135,6 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 23)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23)
 target_link_libraries(${PROJECT_NAME} PUBLIC skiff::skiff skiff::widgets_theme)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_compile_options(${PROJECT_NAME} PRIVATE ${skiff_emscripten_flags})
-endif()
 list(APPEND skiff_widgets_built ${PROJECT_NAME})
 endif()
 
@@ -143,9 +147,6 @@ target_sources(skiff_widgets_web PUBLIC
 set_target_properties(skiff_widgets_web PROPERTIES EXPORT_NAME widgets_web CXX_STANDARD 23)
 target_compile_features(skiff_widgets_web PUBLIC cxx_std_23)
 target_link_libraries(skiff_widgets_web PUBLIC skiff::web skiff::widgets_theme)
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_compile_options(skiff_widgets_web PRIVATE ${skiff_emscripten_flags})
-endif()
 list(APPEND skiff_widgets_built skiff_widgets_web)
 endif()
 
@@ -179,9 +180,6 @@ endif()
 add_library(skiff::ui ALIAS skiff_ui)
 set_target_properties(skiff_ui PROPERTIES EXPORT_NAME ui CXX_STANDARD 23)
 target_compile_features(skiff_ui PUBLIC cxx_std_23)
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  target_compile_options(skiff_ui PRIVATE ${skiff_emscripten_flags})
-endif()
 list(APPEND skiff_widgets_built skiff_ui)
 
 # ---- What this library is, said by the library ----
