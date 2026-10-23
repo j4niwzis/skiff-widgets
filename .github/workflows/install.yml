@@ -154,8 +154,26 @@ jobs:
           test -f prefix/lib/cmake/skiff-widgets/skiff-widgetsConfig.cmake
           test -f prefix/lib/cmake/skiff-widgets/skiffWidgetsTargets.cmake
 
-      # And a consumer, with nothing but find_package: no cmake-everywhere,
-      # no sources of this library, only the prefix.
+      # The provider this project pins, rather than whatever is at the tip of
+      # its main branch: a test that reaches for somebody else's tip fails on
+      # somebody else's push, which says nothing about this. The file the
+      # loader pins, by the URL and the digest it names -- a release's
+      # uploaded archive, not one generated on request.
+      - name: cmake-everywhere, as this project pins it
+        run: |
+          url=$(tr '\n' ' ' < cmake/get_cme.cmake |
+                sed -n 's/.*set(CME_PINNED_URL *"\([^"]*\)").*/\1/p')
+          sha=$(sed -n 's/^set(CME_PINNED_SHA256 "\(.*\)")$/\1/p' cmake/get_cme.cmake)
+          curl -sSL -o /tmp/cme.tar.gz "$url"
+          echo "$sha  /tmp/cme.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/cme && tar xzf /tmp/cme.tar.gz -C /tmp/cme --strip-components=1
+
+      # And a consumer: find_package, cmake-everywhere as the provider, and
+      # nothing else of its own -- no sources of this library, no ports. What
+      # the prefix has is taken from it; what is only described there is
+      # fetched and built as described: splice, which the prefix has a
+      # declaration of and not a copy -- what skiff was built with, named by
+      # its revision -- the way the libraries installed here mean it to be.
       #
       # It has to say two things of its own before project(), and both are
       # about `import std` rather than about this library: the experimental
@@ -172,6 +190,7 @@ jobs:
           set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
               "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
           set(CMAKE_CXX_MODULE_STD 1)
+          set(CMAKE_PROJECT_TOP_LEVEL_INCLUDES /tmp/cme/cmake-everywhere.cmake)
           project(skiff_widgets_consumer LANGUAGES CXX)
           set(CMAKE_CXX_STANDARD 23)
           set(CMAKE_CXX_EXTENSIONS OFF)
@@ -200,7 +219,9 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-23 \
             -DCMAKE_CXX_FLAGS="-stdlib=libstdc++" \
             -DCMAKE_CXX_STDLIB_MODULES_JSON=/tmp/libstdc++.modules.json \
-            -DCMAKE_PREFIX_PATH="$PWD/prefix"
+            -DCMAKE_PREFIX_PATH="$PWD/prefix" \
+            -DCME_STORE_ENABLED=ON \
+            -DCME_SOURCES_ENABLED=ON
           cmake --build /tmp/consumer/build
           /tmp/consumer/build/consumer
 
@@ -216,6 +237,7 @@ jobs:
           set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD
               "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
           set(CMAKE_CXX_MODULE_STD 1)
+          set(CMAKE_PROJECT_TOP_LEVEL_INCLUDES /tmp/cme/cmake-everywhere.cmake)
           project(skiff_widgets_consumer_both LANGUAGES CXX)
           set(CMAKE_CXX_STANDARD 23)
           set(CMAKE_CXX_EXTENSIONS OFF)
@@ -230,7 +252,9 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++-23 \
             -DCMAKE_CXX_FLAGS="-stdlib=libstdc++" \
             -DCMAKE_CXX_STDLIB_MODULES_JSON=/tmp/libstdc++.modules.json \
-            -DCMAKE_PREFIX_PATH="$PWD/prefix"
+            -DCMAKE_PREFIX_PATH="$PWD/prefix" \
+            -DCME_STORE_ENABLED=ON \
+            -DCME_SOURCES_ENABLED=ON
           cmake --build /tmp/consumer-both/build
           /tmp/consumer-both/build/consumer
 
@@ -245,18 +269,6 @@ jobs:
       # the prefix, there would be nothing to take it from.
       - name: found through cmake-everywhere, from the prefix
         run: |
-          # The provider this project pins, rather than whatever is at the
-          # tip of its main branch: a test that reaches for somebody else's
-          # tip fails on somebody else's push, which says nothing about
-          # this.
-          # The file the loader pins, by the URL and the digest it names --
-          # a release's uploaded archive, not one generated on request.
-          url=$(tr '\n' ' ' < cmake/get_cme.cmake |
-                sed -n 's/.*set(CME_PINNED_URL *"\([^"]*\)").*/\1/p')
-          sha=$(sed -n 's/^set(CME_PINNED_SHA256 "\(.*\)")$/\1/p' cmake/get_cme.cmake)
-          curl -sSL -o /tmp/cme.tar.gz "$url"
-          echo "$sha  /tmp/cme.tar.gz" | sha256sum -c -
-          mkdir -p /tmp/cme && tar xzf /tmp/cme.tar.gz -C /tmp/cme --strip-components=1
           mkdir -p /tmp/consumer-cme
           cp /tmp/consumer/main.cc /tmp/consumer-cme/main.cc
           cat > /tmp/consumer-cme/CMakeLists.txt <<'EOF'
