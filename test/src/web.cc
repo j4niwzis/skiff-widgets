@@ -92,11 +92,11 @@ TEST(Web, WhatIsDoneToAControlSetsItsPartAndThePageShowsIt) {
   EXPECT_NEAR(m.look<Settings>()->volume, 0.25f, 0.001f);
   EXPECT_NE(dom::dump(volume.element()).find("value=\"250\""), std::string::npos);
 
-  fire(page, look.tabs()[1], "click", "");
+  fire(page, look.element(Part{2}), "click", "");
   EXPECT_EQ(m.look<Settings>()->look, Look::kFrosted);
   EXPECT_EQ(look.selected(), 1);
   EXPECT_EQ(pick.selected(), 1);  // the select shows the same part
-  EXPECT_NE(dom::dump(look.tabs()[1]).find("aria-selected=\"true\""), std::string::npos);
+  EXPECT_NE(dom::dump(look.element(Part{2})).find("aria-selected=\"true\""), std::string::npos);
 
   fire(page, name.element(), "input", "bob");
   EXPECT_EQ(m.look<Settings>()->name, "bob");
@@ -204,8 +204,7 @@ TEST(Web, TheScenesWidgetsAreTheBrowsersControlsCallingTheirActions) {
   EXPECT_NEAR(said.done, 0.5f, 0.001f);
 
   auto &menu = std::get<4>(page.root().fParts);
-  dom::Handle select = dom::kNone;
-  menu.handles([&](dom::Handle h) { if (h != menu.element()) select = h; });
+  const dom::Handle select = menu.element(Part{2});
   ASSERT_NE(select, dom::kNone);
   fire(page, select, "change", "0");
   EXPECT_EQ(said.chosen, 0u);
@@ -229,8 +228,8 @@ TEST(Web, ADrawerAndASlideOverShowWhatIsOpenedOverTheirBase) {
   EXPECT_EQ(html.find("display:none"), std::string::npos) << html;
   EXPECT_NE(html.find("transform:translateX(0);"), std::string::npos) << html;
   // The scrim clicked: pushed back.
-  dom::Handle scrim = dom::kNone;
-  drawer.handles([&](dom::Handle h) { if (h != drawer.element()) scrim = h; });
+  const dom::Handle scrim = drawer.element(Part{1});
+  ASSERT_NE(scrim, dom::kNone);
   fire(page, scrim, "click", "");
   EXPECT_FALSE(drawer.isOpen());
   // A panel opened over the base, and taken back.

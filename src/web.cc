@@ -113,12 +113,12 @@ template <class T = bool> class ToggleField : public Node {
 public:
   explicit ToggleField(scene::Spec spec = {}) { fState.apply(spec); }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-toggle");
-    dom::attr(fState.fHandle, "type", "checkbox");
-    dom::listen(fState.fHandle, "change");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-toggle");
+    to.attr("type", "checkbox");
+    to.listen("change");
+    to.checked(fNow);
   }
-  void sync() { dom::checked(fState.fHandle, fNow); }
   void read(const T &now) {
     const bool on = onOf(now);
     if (on != fNow || !fShown) {
@@ -143,21 +143,18 @@ template <class T> class SliderField : public Node {
 public:
   SliderField(T low, T high, scene::Spec spec = {}) : fLow(low), fHigh(high) { fState.apply(spec); }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-slider");
-    dom::attr(fState.fHandle, "type", "range");
-    dom::attr(fState.fHandle, "min", "0");
-    dom::attr(fState.fHandle, "max", std::to_string(kSteps));
-    dom::attr(fState.fHandle, "step", "1");
-    dom::listen(fState.fHandle, "input");
-  }
-  void sync() {
-    dom::value(fState.fHandle, std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
+  void markup(Markup &to) {
+    to.attr("class", "skiff-slider");
+    to.attr("type", "range");
+    to.attr("min", "0");
+    to.attr("max", std::to_string(kSteps));
+    to.attr("step", "1");
+    to.listen("input");
+    to.value(std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
     // The track filled up to the knob, as the scene draws it: the gradient is
     // the element's own, where the browser's track cannot be told the value.
     const std::string at = number(fFraction * 100.0f) + "%";
-    dom::style(fState.fHandle, "--skiff-track",
-               "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
+    to.style("--skiff-track", "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
   }
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -173,7 +170,7 @@ public:
   }
   [[nodiscard]] float fraction() const noexcept { return fFraction; }
   [[nodiscard]] T value() const { return valueAt(fFraction, fLow, fHigh); }
-  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+  bool onDom(Part, std::string_view event, std::string_view value) {
     if (event != "input" && event != "change") return false;
     int steps = 0;
     std::from_chars(value.data(), value.data() + value.size(), steps);
@@ -202,13 +199,13 @@ template <class T = std::string> class TextField : public Node {
 public:
   explicit TextField(std::string placeholder = {}, scene::Spec spec = {}) : fPlaceholder(std::move(placeholder)) { fState.apply(spec); }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-textbox");
-    dom::attr(fState.fHandle, "type", "text");
-    if (!fPlaceholder.empty()) dom::attr(fState.fHandle, "placeholder", fPlaceholder);
-    dom::listen(fState.fHandle, "input");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-textbox");
+    to.attr("type", "text");
+    if (!fPlaceholder.empty()) to.attr("placeholder", fPlaceholder);
+    to.listen("input");
+    to.value(fText);
   }
-  void sync() { dom::value(fState.fHandle, fText); }
   void read(const T &now) {
     const std::string &shown = textOf(now);
     if (shown != fText) {
@@ -217,7 +214,7 @@ public:
     }
   }
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
-  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+  bool onDom(Part, std::string_view event, std::string_view value) {
     if (event != "input" && event != "change") return false;
     fText = std::string(value);  // the element shows it already
     return true;
@@ -237,27 +234,19 @@ template <class T> class ChoiceTabs : public Node {
 public:
   using Choice = std::pair<std::string, T>;
   explicit ChoiceTabs(std::vector<Choice> choices, scene::Spec spec = {}) : fChoices(std::move(choices)) { fState.apply(spec); }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-tabs");
-    dom::attr(fState.fHandle, "role", "tablist");
-    fTabs.clear();
-    for (const auto &[label, value] : fChoices) {
-      const dom::Handle tab = dom::create("button");
-      dom::attr(tab, "class", "skiff-tab");
-      dom::attr(tab, "role", "tab");
-      dom::attr(tab, "type", "button");
-      dom::text(tab, label);
-      dom::listen(tab, "click");
-      dom::append(fState.fHandle, tab);
-      fTabs.push_back(tab);
-    }
-  }
-  template <class F> void handles(F &&f) {
-    f(fState.fHandle);
-    for (dom::Handle tab : fTabs) f(tab);
-  }
-  void sync() {
-    for (std::size_t i = 0; i < fTabs.size(); ++i) dom::attr(fTabs[i], "aria-selected", static_cast<int>(i) == fSelected ? "true" : "false");
+  // Each choice a tab: Part 1, 2, ... in the choices' order.
+  void markup(Markup &to) {
+    to.attr("class", "skiff-tabs");
+    to.attr("role", "tablist");
+    for (std::size_t i = 0; i < fChoices.size(); ++i)
+      to.inner("button", Part{static_cast<std::uint32_t>(i + 1)}, [&](Markup &tab) {
+        tab.attr("class", "skiff-tab");
+        tab.attr("role", "tab");
+        tab.attr("type", "button");
+        tab.attr("aria-selected", static_cast<int>(i) == fSelected ? "true" : "false");
+        tab.text(fChoices[i].first);
+        tab.listen("click");
+      });
   }
   void read(const T &now) {
     const auto found = std::ranges::find(fChoices, now, &Choice::second);
@@ -268,12 +257,10 @@ public:
     }
   }
   [[nodiscard]] int selected() const noexcept { return fSelected; }
-  [[nodiscard]] std::span<const dom::Handle> tabs() const noexcept { return fTabs; }
-  bool onDom(dom::Handle target, std::string_view event, std::string_view) {
-    if (event != "click") return false;
-    const auto found = std::ranges::find(fTabs, target);
-    fPicked = found == fTabs.end() ? -1 : static_cast<int>(found - fTabs.begin());
-    return fPicked >= 0;
+  bool onDom(Part where, std::string_view event, std::string_view) {
+    if (event != "click" || where.index == 0 || where.index > fChoices.size()) return false;
+    fPicked = static_cast<int>(where.index) - 1;
+    return true;
   }
   auto onPress() -> std::optional<bind::Own<model::SetTo<T>>> {
     if (fPicked < 0 || static_cast<std::size_t>(fPicked) >= fChoices.size()) return std::nullopt;
@@ -282,7 +269,6 @@ public:
 
 private:
   std::vector<Choice> fChoices;
-  std::vector<dom::Handle> fTabs;
   int fSelected = -1;
   int fPicked = -1;
 };
@@ -293,17 +279,17 @@ public:
   using Choice = std::pair<std::string, T>;
   explicit ChoiceList(std::vector<Choice> choices, scene::Spec spec = {}) : fChoices(std::move(choices)) { fState.apply(spec); }
   [[nodiscard]] static constexpr std::string_view tag() { return "select"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-select");
-    for (std::size_t i = 0; i < fChoices.size(); ++i) {
-      const dom::Handle option = dom::create("option");
-      dom::attr(option, "value", std::to_string(i));
-      dom::text(option, fChoices[i].first);
-      dom::append(fState.fHandle, option);
-    }
-    dom::listen(fState.fHandle, "change");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-select");
+    for (std::size_t i = 0; i < fChoices.size(); ++i)
+      to.inner("option", Part{static_cast<std::uint32_t>(i + 1)}, [&](Markup &option) {
+        option.attr("value", std::to_string(i));
+        if (static_cast<int>(i) == fSelected) option.attr("selected", "");
+        option.text(fChoices[i].first);
+      });
+    to.listen("change");
+    to.value(fSelected < 0 ? std::string() : std::to_string(fSelected));
   }
-  void sync() { dom::value(fState.fHandle, fSelected < 0 ? std::string() : std::to_string(fSelected)); }
   void read(const T &now) {
     const auto found = std::ranges::find(fChoices, now, &Choice::second);
     const int selected = found == fChoices.end() ? -1 : static_cast<int>(found - fChoices.begin());
@@ -313,7 +299,7 @@ public:
     }
   }
   [[nodiscard]] int selected() const noexcept { return fSelected; }
-  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+  bool onDom(Part, std::string_view event, std::string_view value) {
     if (event != "change" && event != "input") return false;
     int picked = -1;
     std::from_chars(value.data(), value.data() + value.size(), picked);
@@ -338,12 +324,12 @@ public:
   using Out = model::Types<E>;
   SendButton(std::string label, E event, scene::Spec spec = {}) : fLabel(std::move(label)), fEvent(std::move(event)) { fState.apply(spec); }
   [[nodiscard]] static constexpr std::string_view tag() { return "button"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-button");
-    dom::attr(fState.fHandle, "type", "button");
-    dom::listen(fState.fHandle, "click");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-button");
+    to.attr("type", "button");
+    to.listen("click");
+    to.text(fLabel);
   }
-  void sync() { dom::text(fState.fHandle, fLabel); }
   void read(E event) { fEvent = std::move(event); }
   void read(std::pair<std::string, E> value) {
     setLabel(std::move(value.first));
@@ -355,7 +341,7 @@ public:
       markDirty();
     }
   }
-  bool onDom(dom::Handle, std::string_view event, std::string_view) { return event == "click"; }
+  bool onDom(Part, std::string_view event, std::string_view) { return event == "click"; }
   E onPress() { return fEvent; }
 
 private:
@@ -392,17 +378,14 @@ public:
   }
   Button(Theme theme, std::string label, Action action = {}) : Button(std::move(label), std::move(action)) { fTheme = std::move(theme); }
   [[nodiscard]] static constexpr std::string_view tag() { return "button"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-button");
-    dom::attr(fState.fHandle, "type", "button");
-    dom::listen(fState.fHandle, "click");
-  }
-  void sync() {
+  void markup(Markup &to) {
     std::string classes = "skiff-button";
     if (fPrimary) classes += " skiff-primary";
     if (fOutlined) classes += " skiff-outlined";
-    dom::attr(fState.fHandle, "class", classes);
-    dom::text(fState.fHandle, fLabel);
+    to.attr("class", classes);
+    to.attr("type", "button");
+    to.listen("click");
+    to.text(fLabel);
   }
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -436,7 +419,7 @@ public:
   void setEnabled(bool enabled) { setDisabled(!enabled); }
   [[nodiscard]] bool enabled() const noexcept { return !disabled(); }
   [[nodiscard]] Action &action() noexcept { return fAction; }
-  bool onDom(dom::Handle, std::string_view event, std::string_view) { return event == "click" && !disabled(); }
+  bool onDom(Part, std::string_view event, std::string_view) { return event == "click" && !disabled(); }
   auto onPress() { return detail::called(fAction); }
 
 private:
@@ -461,12 +444,12 @@ public:
   explicit Toggle(OnToggle onToggle, scene::Spec spec = {}) : fOnToggle(std::move(onToggle)) { fState.apply(spec); }
   Toggle(Theme theme, OnToggle onToggle) : Toggle(std::move(onToggle)) { fTheme = std::move(theme); }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-toggle");
-    dom::attr(fState.fHandle, "type", "checkbox");
-    dom::listen(fState.fHandle, "change");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-toggle");
+    to.attr("type", "checkbox");
+    to.listen("change");
+    to.checked(fOn);
   }
-  void sync() { dom::checked(fState.fHandle, fOn); }
   void setTheme(Theme value) {
     fTheme = std::move(value);
     markDirty();
@@ -479,7 +462,7 @@ public:
   }
   void setOnNow(bool on) { setOn(on); }
   [[nodiscard]] bool on() const noexcept { return fOn; }
-  bool onDom(dom::Handle, std::string_view event, std::string_view) {
+  bool onDom(Part, std::string_view event, std::string_view) {
     if (event != "change") return false;
     fOn = !fOn;
     return true;
@@ -511,15 +494,13 @@ public:
     fTheme = std::move(theme);
   }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
-  void mounted() {
-    if (!fPlaceholder.empty()) dom::attr(fState.fHandle, "placeholder", fPlaceholder);
-    dom::listen(fState.fHandle, "input");
-  }
-  void sync() {
-    dom::attr(fState.fHandle, "class", fSearch ? "skiff-textbox skiff-search" : "skiff-textbox");
-    dom::attr(fState.fHandle, "type", fMasked ? "password" : "text");
-    if (fTrailingInset > 0.0f) dom::style(fState.fHandle, "padding-right", px(fTrailingInset));
-    dom::value(fState.fHandle, fText);
+  void markup(Markup &to) {
+    if (!fPlaceholder.empty()) to.attr("placeholder", fPlaceholder);
+    to.listen("input");
+    to.attr("class", fSearch ? "skiff-textbox skiff-search" : "skiff-textbox");
+    to.attr("type", fMasked ? "password" : "text");
+    if (fTrailingInset > 0.0f) to.style("padding-right", px(fTrailingInset));
+    to.value(fText);
   }
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -549,7 +530,7 @@ public:
     }
   }
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
-  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+  bool onDom(Part, std::string_view event, std::string_view value) {
     if (event != "input" && event != "change") return false;
     fText = std::string(value);
     return true;
@@ -585,13 +566,13 @@ public:
     fTheme = std::move(theme);
   }
   [[nodiscard]] static constexpr std::string_view tag() { return "textarea"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-textarea");
-    if (!fPlaceholder.empty()) dom::attr(fState.fHandle, "placeholder", fPlaceholder);
-    dom::listen(fState.fHandle, "input");
-    dom::listen(fState.fHandle, "keydown");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-textarea");
+    if (!fPlaceholder.empty()) to.attr("placeholder", fPlaceholder);
+    to.listen("input");
+    to.listen("keydown");
+    to.value(fText);
   }
-  void sync() { dom::value(fState.fHandle, fText); }
   void setTheme(Theme value) {
     fTheme = std::move(value);
     markDirty();
@@ -606,7 +587,7 @@ public:
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
   // Typed into: the text as it is. Enter alone (keydown "Enter|00"): a
   // submission, for an area that sends (SubmitArea); Shift+Enter is a line.
-  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+  bool onDom(Part, std::string_view event, std::string_view value) {
     if (event == "input" || event == "change") {
       fText = std::string(value);
       fSubmitted = false;
@@ -638,8 +619,8 @@ public:
   using Out = model::Types<E>;
   explicit SubmitArea(std::string placeholder = {}, scene::Spec spec = {}) : TextArea<>(std::move(placeholder), {}, spec) {}
   SubmitArea(Theme theme, std::string placeholder) : TextArea<>(std::move(theme), std::move(placeholder)) {}
-  bool onDom(dom::Handle target, std::string_view event, std::string_view value) {
-    TextArea<>::onDom(target, event, value);
+  bool onDom(Part where, std::string_view event, std::string_view value) {
+    TextArea<>::onDom(where, event, value);
     return event == "keydown" && this->submitted();
   }
   E onPress() {
@@ -666,20 +647,17 @@ public:
   }
   SliderBar(Theme theme, OnSet onSet = {}, OnDone onDone = {}) : SliderBar(std::move(onSet), std::move(onDone)) { fTheme = std::move(theme); }
   [[nodiscard]] static constexpr std::string_view tag() { return "input"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-slider");
-    dom::attr(fState.fHandle, "type", "range");
-    dom::attr(fState.fHandle, "min", "0");
-    dom::attr(fState.fHandle, "max", std::to_string(kSteps));
-    dom::attr(fState.fHandle, "step", "1");
-    dom::listen(fState.fHandle, "input");
-    dom::listen(fState.fHandle, "change");
-  }
-  void sync() {
-    dom::value(fState.fHandle, std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
+  void markup(Markup &to) {
+    to.attr("class", "skiff-slider");
+    to.attr("type", "range");
+    to.attr("min", "0");
+    to.attr("max", std::to_string(kSteps));
+    to.attr("step", "1");
+    to.listen("input");
+    to.listen("change");
+    to.value(std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
     const std::string at = number(fFraction * 100.0f) + "%";
-    dom::style(fState.fHandle, "--skiff-track",
-               "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
+    to.style("--skiff-track", "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
   }
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -694,7 +672,7 @@ public:
   }
   [[nodiscard]] float fraction() const noexcept { return fFraction; }
   [[nodiscard]] bool dragging() const noexcept { return false; }
-  bool onDom(dom::Handle, std::string_view event, std::string_view value) {
+  bool onDom(Part, std::string_view event, std::string_view value) {
     if (event != "input" && event != "change") return false;
     int steps = 0;
     std::from_chars(value.data(), value.data() + value.size(), steps);
@@ -731,12 +709,12 @@ public:
                   .background = look.plate});
   }
   [[nodiscard]] static constexpr std::string_view tag() { return "span"; }
-  void mounted() { dom::attr(fState.fHandle, "class", "skiff-pill"); }
-  void sync() {
-    dom::text(fState.fHandle, fLabel);
-    dom::style(fState.fHandle, "color", rgba(fLook.text));
-    dom::style(fState.fHandle, "font-size", px(fLook.size));
-    dom::style(fState.fHandle, "font-weight", fLook.bold ? "600" : "400");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-pill");
+    to.text(fLabel);
+    to.style("color", rgba(fLook.text));
+    to.style("font-size", px(fLook.size));
+    to.style("font-weight", fLook.bold ? "600" : "400");
   }
   void setLabel(std::string label) {
     if (label != fLabel) {
@@ -772,15 +750,17 @@ public:
     parts.picture.keepBox();
     fSize = size;
   }
-  void mounted() { dom::attr(fState.fHandle, "class", "skiff-avatar"); }
   [[nodiscard]] bool wantsSync() const { return true; }
-  void sync() {
+  // The picture where it has one, else the initials: shown by its parts'
+  // own states, written as they are.
+  void markup(Markup &to) {
+    to.attr("class", "skiff-avatar");
     const bool pictured = parts.picture.picture() != nullptr;
     parts.initials.setVisible(!pictured);
     parts.picture.setVisible(pictured);
-    dom::style(parts.initials.element(), "font-size", px(fSize * 0.4f));
-    dom::style(parts.initials.element(), "font-weight", "600");
-    dom::style(parts.initials.element(), "color", "rgba(255,255,255,1)");
+    parts.initials.setStyle("font-size", px(fSize * 0.4f));
+    parts.initials.setStyle("font-weight", "600");
+    parts.initials.setStyle("color", "rgba(255,255,255,1)");
   }
   void show(std::string initials, Source picture, scene::Gradient colours) {
     parts.initials.setText(std::move(initials));
@@ -809,15 +789,11 @@ public:
   explicit RadialLoader(float size, OnPress onPress = {}) : fOnPress(std::move(onPress)) {
     fState.apply({.width = size, .height = size, .cornerRadius = size * 0.5f});
   }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-loader");
-    if constexpr (!std::same_as<OnPress, scene::NoAction>) dom::listen(fState.fHandle, "click");
-  }
-  void sync() {
-    if (fProgress) dom::style(fState.fHandle, "--skiff-done", number(std::clamp(*fProgress, 0.0f, 1.0f) * 100.0f) + "%");
-    else dom::style(fState.fHandle, "--skiff-done", "");
-    if (fStopped) dom::attr(fState.fHandle, "data-stopped", "");
-    else dom::dropAttr(fState.fHandle, "data-stopped");
+  void markup(Markup &to) {
+    to.attr("class", "skiff-loader");
+    if constexpr (!std::same_as<OnPress, scene::NoAction>) to.listen("click");
+    if (fProgress) to.style("--skiff-done", number(std::clamp(*fProgress, 0.0f, 1.0f) * 100.0f) + "%");
+    if (fStopped) to.attr("data-stopped", "");
   }
   void setProgress(std::optional<float> done) {
     fProgress = done;
@@ -829,7 +805,7 @@ public:
       markDirty();
     }
   }
-  bool onDom(dom::Handle, std::string_view event, std::string_view) { return event == "click"; }
+  bool onDom(Part, std::string_view event, std::string_view) { return event == "click"; }
   auto onPress() { return detail::called(fOnPress); }
 
 private:
@@ -850,29 +826,22 @@ public:
   ChoiceMenu(Theme theme, std::string label, std::vector<std::string> options, std::size_t selected, Choose action)
       : choose(std::move(action)), names(std::move(options)), current(selected), fLabel(std::move(label)), fTheme(std::move(theme)) {}
   [[nodiscard]] static constexpr std::string_view tag() { return "label"; }
-  void mounted() {
-    dom::attr(fState.fHandle, "class", "skiff-menu");
-    fCaption = dom::create("span");
-    dom::text(fCaption, fLabel);
-    dom::append(fState.fHandle, fCaption);
-    fSelect = dom::create("select");
-    dom::attr(fSelect, "class", "skiff-select");
-    for (std::size_t i = 0; i < names.size(); ++i) {
-      const dom::Handle option = dom::create("option");
-      dom::attr(option, "value", std::to_string(i));
-      dom::text(option, names[i]);
-      dom::append(fSelect, option);
-    }
-    dom::listen(fSelect, "change");
-    dom::append(fState.fHandle, fSelect);
-  }
-  template <class F> void handles(F &&f) {
-    f(fState.fHandle);
-    f(fSelect);
-  }
-  void sync() {
-    if (fCaption != dom::kNone) dom::text(fCaption, fLabel);
-    if (fSelect != dom::kNone) dom::value(fSelect, current < names.size() ? std::to_string(current) : std::string());
+  // Its caption (Part 1), and a select (Part 2) of the options (Parts 3, ...).
+  static constexpr Part kSelect{2};
+  void markup(Markup &to) {
+    to.attr("class", "skiff-menu");
+    to.inner("span", Part{1}, [&](Markup &caption) { caption.text(fLabel); });
+    to.inner("select", kSelect, [&](Markup &select) {
+      select.attr("class", "skiff-select");
+      for (std::size_t i = 0; i < names.size(); ++i)
+        select.inner("option", Part{static_cast<std::uint32_t>(i + 3)}, [&](Markup &option) {
+          option.attr("value", std::to_string(i));
+          if (i == current) option.attr("selected", "");
+          option.text(names[i]);
+        });
+      select.listen("change");
+      select.value(current < names.size() ? std::to_string(current) : std::string());
+    });
   }
   void read(std::size_t selected) {
     if (selected != current) {
@@ -881,8 +850,8 @@ public:
     }
   }
   void show_options(bool) {}
-  bool onDom(dom::Handle target, std::string_view event, std::string_view value) {
-    if (target != fSelect || (event != "change" && event != "input")) return false;
+  bool onDom(Part where, std::string_view event, std::string_view value) {
+    if (where != kSelect || (event != "change" && event != "input")) return false;
     int index = -1;
     std::from_chars(value.data(), value.data() + value.size(), index);
     if (index < 0 || static_cast<std::size_t>(index) >= names.size()) return false;
@@ -895,29 +864,27 @@ public:
 private:
   std::string fLabel;
   Theme fTheme = theme();
-  dom::Handle fCaption = dom::kNone;
-  dom::Handle fSelect = dom::kNone;
 };
 
 // A child shown or hidden: open, it is there; closed, it is not (the scene
 // slides it; the page shows and hides).
 template <class Child> class Collapsible : public Node {
 public:
-  template <class... Args> explicit Collapsible(Args &&...args) : fChild(std::forward<Args>(args)...) {}
+  template <class... Args> explicit Collapsible(Args &&...args) : fChild(std::forward<Args>(args)...) { fState.fVisible = false; }
   [[nodiscard]] Child &child() noexcept { return fChild; }
   [[nodiscard]] const Child &child() const noexcept { return fChild; }
   [[nodiscard]] bool isOpen() const noexcept { return fOpen; }
   void setOpen(bool open) {
     if (open != fOpen) {
       fOpen = open;
+      setVisible(open);
       markDirty();
     }
   }
   void setOpenNow(bool open) { setOpen(open); }
   [[nodiscard]] bool settling() const noexcept { return false; }
   void forEachChild(auto &&f) { f(fChild); }
-  void mounted() { dom::attr(fState.fHandle, "class", "skiff-collapsible"); }
-  void sync() { dom::style(fState.fHandle, "display", fOpen ? "" : "none"); }
+  void markup(Markup &to) { to.attr("class", "skiff-collapsible"); }
 
 private:
   Child fChild;
@@ -941,7 +908,6 @@ public:
   Drawer(std::piecewise_construct_t, std::tuple<BaseArgs...> base, std::tuple<ContentArgs...> content)
       : fBase(std::make_from_tuple<Base>(std::move(base))), fPanel(vbox(), std::make_from_tuple<Content>(std::move(content))) {
     fState.apply({.fill = true});
-    fScrim.setVisible(false);
     fPanel.apply({.fillY = true, .width = fWidth});
   }
   [[nodiscard]] Base &base() noexcept { return fBase; }
@@ -961,29 +927,32 @@ public:
   void closeNow() { setOpen(false); }
   void setOpen(bool open) {
     fOpen = open;
-    fScrim.setVisible(open);
     markDirty();
   }
   void forEachChild(auto &&f) {
     f(fBase);
-    f(fScrim);
     f(fPanel);
   }
-  void mounted() { dom::attr(fState.fHandle, "class", "skiff-drawer"); }
-  template <class F> void handles(F &&f) {
-    f(fState.fHandle);
-    f(fScrim.element());
-  }
-  // The children are elements by the time the drawer is synced (mounted
-  // runs before they are made): the sheet's class and its slide are written here.
-  void sync() {
-    dom::attr(fPanel.element(), "class", "skiff-stack skiff-sheet");
-    dom::style(fPanel.element(), "transform", fOpen ? "translateX(0)" : "translateX(-100%)");
-    dom::style(fPanel.element(), "background-color", rgba(fSheet));
+  // What covers the base -- the scrim, an element of the drawer's own (Part
+  // 1), taking the click so that a press off the panel closes the drawer
+  // rather than reaching what is under it -- and the sheet, given its class
+  // and its slide.
+  static constexpr Part kScrim{1};
+  void markup(Markup &to) {
+    to.attr("class", "skiff-drawer");
+    to.inner("div", kScrim, [&](Markup &scrim) {
+      scrim.attr("class", "skiff-scrim");
+      scrim.listen("click");
+      if (!fOpen) scrim.style("display", "none");
+    });
+    fPanel.addClass("skiff-sheet");
+    fPanel.setStyle("transform", fOpen ? "translateX(0)" : "translateX(-100%)");
+    fPanel.setStyle("background-color", rgba(fSheet));
+    fPanel.setStyle("z-index", "1");
   }
   // The scrim clicked: the drawer pushed back, or the program told.
-  bool onDom(dom::Handle target, std::string_view event, std::string_view) {
-    if (target != fScrim.element() || event != "click" || !fOpen) return false;
+  bool onDom(Part where, std::string_view event, std::string_view) {
+    if (where != kScrim || event != "click" || !fOpen) return false;
     if constexpr (std::same_as<Dismiss, dismiss::closes>) {
       close();
       return false;
@@ -1000,16 +969,7 @@ public:
   }
 
 private:
-  // What covers the base: it takes the click, so a press off the panel
-  // closes the drawer rather than reaching what is under it.
-  struct Scrim : Box<> {
-    void mounted() {
-      dom::attr(fState.fHandle, "class", "skiff-scrim");
-      dom::listen(fState.fHandle, "click");
-    }
-  };
   Base fBase;
-  Scrim fScrim;
   Stack<Content> fPanel;
   scene::Colour fSheet = 0xff202020u;
   float fWidth = 300.0f;
@@ -1046,9 +1006,9 @@ public:
     f(fBase);
     f(fRows);
   }
-  void mounted() { dom::attr(fState.fHandle, "class", "skiff-slideover"); }
+  void markup(Markup &to) { to.attr("class", "skiff-slideover"); }
   std::vector<Over> fRows;
-  std::vector<dom::Handle> fShownRows;
+  std::vector<dom::Handle> fShownRows;  // the rows' elements as last appended: the page keeps it
 
 private:
   Base fBase;
@@ -1090,15 +1050,13 @@ public:
     markDirty();
   }
   void setBlurs(std::vector<float> amounts) { setBlur(amounts.empty() ? 0.0f : amounts.front()); }
-  void mounted() { dom::attr(fState.fHandle, "class", "skiff-wallpaper"); }
-  void sync() {
-    const dom::Handle h = fState.fHandle;
-    if (fGradient) dom::style(h, "background-image", "linear-gradient(" + rgba(fGradient->top) + "," + rgba(fGradient->bottom) + ")");
-    else dom::style(h, "background-image", "");
-    if (fColour) dom::style(h, "background-color", rgba(*fColour));
-    dom::style(h, "opacity", number(fOpacity));
-    dom::style(h, "filter", fBlur > 0.0f ? "blur(" + px(fBlur) + ")" : std::string());
-    dom::style(h, "box-shadow", fTint ? "inset 0 0 0 100vmax " + rgba(*fTint) : std::string());
+  void markup(Markup &to) {
+    to.attr("class", "skiff-wallpaper");
+    if (fGradient) to.style("background-image", "linear-gradient(" + rgba(fGradient->top) + "," + rgba(fGradient->bottom) + ")");
+    if (fColour) to.style("background-color", rgba(*fColour));
+    to.style("opacity", number(fOpacity));
+    to.style("filter", fBlur > 0.0f ? "blur(" + px(fBlur) + ")" : std::string());
+    to.style("box-shadow", fTint ? "inset 0 0 0 100vmax " + rgba(*fTint) : std::string());
   }
 
 private:
