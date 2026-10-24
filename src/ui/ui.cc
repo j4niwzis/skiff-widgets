@@ -290,10 +290,10 @@ struct PageLink : skiff::web::Text {
   PageLink(std::string label, std::string href, float size, scene::Colour colour, bool bold)
       : skiff::web::Text(std::move(label), size, colour, bold), fHref(std::move(href)) {}
   [[nodiscard]] static constexpr std::string_view tag() { return "a"; }
-  void mounted() {
-    skiff::web::Text::mounted();
-    skiff::web::dom::attr(fState.fHandle, "class", "skiff-text skiff-link");
-    skiff::web::dom::attr(fState.fHandle, "href", fHref);
+  void markup(skiff::web::Markup &to) {
+    skiff::web::Text::markup(to);
+    to.attr("class", "skiff-text skiff-link");
+    to.attr("href", fHref);
   }
   std::string fHref;
 };
