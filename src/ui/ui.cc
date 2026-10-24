@@ -339,6 +339,21 @@ template <class P, class S> struct Either {
 };
 template <class P, class S> [[nodiscard]] Either<P, S> either(P onPage, S onScene) { return {std::move(onPage), std::move(onScene)}; }
 
+// A part that is the browser's own: on the page, a client (skiff::web::Client)
+// -- a model of its own, which the tree's does not hold, and where the page
+// is kept on the server, the part that runs where script runs. On the scene
+// there is no server: the part is the tree's, as it would be without this.
+template <class V> struct OnClient {
+  V fView;
+#ifdef SKIFF_UI_ON_PAGE
+  auto on(OnPage tag) && { return skiff::web::client(mount(tag, std::move(fView))); }
+#endif
+#ifdef SKIFF_UI_ON_SCENE
+  auto on(OnScene tag) && { return mount(tag, std::move(fView)); }
+#endif
+};
+template <class V> [[nodiscard]] OnClient<V> client(V view) { return {std::move(view)}; }
+
 // ---- the model's kinds, around a view ------------------------------------
 
 // What wraps one view: made the backend's wrapper, of the view made there.
