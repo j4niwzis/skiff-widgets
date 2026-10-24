@@ -1209,6 +1209,29 @@ private:
     }
     return out;
   }
+  // What is drawn for the text between two offsets of one paragraph whose
+  // block's marks end at `marks`: as shown() says, without asking the block
+  // again. Wrapping measures a paragraph many times over, and a block's look
+  // may be found from the start of the text (a program's code fences): asked
+  // at every measure, a long text pasted -- a log of a thousand lines --
+  // took minutes to lay out, and the program stopped answering.
+  [[nodiscard]] std::string shownWithin(std::size_t from, std::size_t to, std::size_t marks) const {
+    if (fMasked) {
+      return this->shown(from, to);
+    }
+    from = std::max(from, marks);
+    return from < to ? fDoc.text.substr(from, to - from) : std::string();
+  }
+  [[nodiscard]] float widthWithin(const skiff::paint::Painter &p, std::size_t from, std::size_t to, std::size_t marks) const {
+    if (fDoc.spans.empty() || fMasked) {
+      return p.measure(this->shownWithin(from, to, marks), fFontSize);
+    }
+    float width = 0.0f;
+    for (const auto &[a, b, look] : this->runsOf(from, to)) {
+      width += this->painterOf(p, look).measure(this->shownWithin(a, b, marks), fFontSize, look.face);
+    }
+    return width;
+  }
   [[nodiscard]] float xAt(const skiff::paint::Painter &field, const Line &line, std::size_t offset) const {
     const skiff::paint::Painter p = this->painterFor(field, line);
     return this->indentOf(line) + this->widthOf(p, line.fStart, std::min(offset, line.fEnd));
@@ -1422,9 +1445,12 @@ private:
     // kept; code measured in the monospace face.
     float room = width;
     bool monospace = false;
+    // Where the paragraph being wrapped has its marks end: its block asked
+    // once for it, not at every measure.
+    std::size_t marks = 0;
     const auto fits = [&](std::size_t from, std::size_t to) {
       const skiff::paint::Painter p(nullptr, *font, monospace);
-      return this->widthOf(p, from, to) <= room;
+      return this->widthWithin(p, from, to, marks) <= room;
     };
     std::size_t start = 0;
     while (true) {
@@ -1441,14 +1467,20 @@ private:
         continue;
       }
       monospace = look.monospace;
+      marks = start + look.hidden;
       room = look.indent + look.right > 0.0f ? std::max(width - look.indent - look.right, fFontSize * 2.0f) : width;
       const std::size_t newline = fDoc.text.find('\n', start);
       const std::size_t stop = newline == std::string::npos ? fDoc.text.size() : newline;
       std::size_t from = start;
       while (!fits(from, stop)) {
         std::size_t cut = from;
+        // The last space that fits: past the first that does not, none
+        // does -- what is wider only grows.
         for (std::size_t at = from; at < stop; at = next(fDoc.text, at)) {
-          if (fDoc.text[at] == ' ' && at > from && fits(from, at)) {
+          if (fDoc.text[at] == ' ' && at > from) {
+            if (!fits(from, at)) {
+              break;
+            }
             cut = at;
           }
         }
