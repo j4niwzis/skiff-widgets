@@ -449,6 +449,27 @@ template <class Want, class F, class D> struct SpecFor {
 template <class Want, class F, class D> [[nodiscard]] SpecFor<Want, F, D> spec_for(F compute, D view) {
   return {std::move(compute), std::move(view)};
 }
+
+// One of several views: the one a part of the model says (choose: from the
+// part, the index of the view to show). Each is made and bound as any view
+// is -- what it reads it reads whichever is shown -- and only the one chosen
+// is shown: the same on the page and on the scene, and served, a page that
+// switches is the page as it is. switch_on<Where>([](const Where &w) { return
+// w.now.index(); }, home(), user()) shows the page a route says.
+namespace detail {
+template <std::size_t I, class Choose> struct ShownWhen {
+  Choose choose;
+  template <class T> [[nodiscard]] scene::Spec operator()(const T &now) const {
+    return scene::Spec{.visible = static_cast<std::size_t>(choose(now)) == I};
+  }
+};
+} // namespace detail
+template <class T, class Choose, class... V> [[nodiscard]] auto switch_on(Choose choose, V... views) {
+  return [&]<std::size_t... I>(std::index_sequence<I...>) {
+    return column(vbox(0.0f, {.fillX = true, .autoSize = scene::axes::kY}),
+                  spec_for<T>(detail::ShownWhen<I, Choose>{choose}, std::move(views))...);
+  }(std::index_sequence_for<V...>{});
+}
 // Words read from the part.
 template <class Want, class F> struct TextFor {
   F fCompute;
