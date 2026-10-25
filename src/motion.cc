@@ -431,6 +431,46 @@ public:
     this->place();
   }
 
+  // While it slides: the base, which does not move, and the panel, which
+  // only moves, each drawn once into pixels kept, and put down where they
+  // are at each frame -- the scrim darkening between them, the one thing
+  // drawn. Drawn whole at each frame, the scrim's change repainting the
+  // window, a phone drawing in software slid the drawer out at 10 frames a
+  // second: every chat in the list, every line of the panel, drawn again
+  // each time. Where the base moves too, or the slide is over, drawn as it
+  // is.
+  void draw(skiff::scene::Painting &painting, skia::SkCanvas *canvas, float alpha) {
+    namespace scene = skiff::scene;
+    skia::SkMatrix inverse;
+    if (!fSlide.moving() || moving(fBase) || !canvas->getTotalMatrix().invert(&inverse)) {
+      fFrozenBase = nullptr;
+      fFrozenPanel = nullptr;
+      scene::drawDefault(*this, painting, canvas, alpha);
+      return;
+    }
+    const skia::SkMatrix &matrix = canvas->getTotalMatrix();
+    if (!fFrozenBase)
+      fFrozenBase = frozen(matrix, scene::stateOf(fBase).fBounds, 0.0f, fBaseAt, [&](skia::SkCanvas &into) { scene::draw(fBase, painting, &into, alpha); });
+    if (!fFrozenPanel) {
+      // Drawn where it is all the way out: the shift it has now taken back.
+      fPanelShiftAt = fSheet.fState.fShiftX;
+      fFrozenPanel = frozen(matrix, fSheet.fState.fBounds, fPanelShiftAt, fPanelAt, [&](skia::SkCanvas &into) {
+        scene::draw(fSheet, painting, &into, alpha);
+        scene::draw(fContent, painting, &into, alpha);
+      });
+    }
+    if (!fFrozenBase || !fFrozenPanel) {
+      fFrozenBase = nullptr;
+      fFrozenPanel = nullptr;
+      scene::drawDefault(*this, painting, canvas, alpha);
+      return;
+    }
+    const skia::SkSamplingOptions nearest(skia::SkFilterMode::kNearest);
+    canvas->drawImageRect(fFrozenBase, inverse.mapRect(fBaseAt), nearest);
+    scene::draw(fScrim, painting, canvas, alpha);
+    canvas->drawImageRect(fFrozenPanel, inverse.mapRect(fPanelAt).makeOffset(fSheet.fState.fShiftX, 0.0f), nearest);
+  }
+
   // A press on the scrim pushes the panel back.
   using Node::onPointer;
   void onPointer(skiff::scene::phase::bubble, const skiff::scene::pointer::down &,
@@ -512,6 +552,39 @@ private:
     // here repainted the whole window while it was closed and stationary.
   }
   float fPanelWidth = 0.0f;
+
+  // What lies in `bounds` (less a shift it is drawn with), drawn by `paint`
+  // into pixels of the device's size; `at`, where they go on the device.
+  template <class Paint>
+  static skia::Sp<skia::SkImage> frozen(const skia::SkMatrix &matrix, const skia::SkRect &bounds, float shift, skia::SkRect &at, Paint &&paint) {
+    const skia::SkRect device = matrix.mapRect(bounds);
+    const int width = std::max(1, static_cast<int>(std::ceil(device.width())));
+    const int height = std::max(1, static_cast<int>(std::ceil(device.height())));
+    skia::SkBitmap pixels;
+    if (!pixels.tryAllocN32Pixels(width, height))
+      return nullptr;
+    pixels.eraseColor(0);
+    skia::SkCanvas into(pixels);
+    into.translate(-device.fLeft, -device.fTop);
+    into.concat(matrix);
+    into.translate(-shift, 0.0f);
+    paint(into);
+    at = skia::SkRect::MakeXYWH(device.fLeft, device.fTop, static_cast<float>(width), static_cast<float>(height));
+    return pixels.asImage();
+  }
+  // Whether anything in a part moves: seen as the walks see it, through
+  // whatever holds it.
+  template <class Part> static bool moving(Part &part) {
+    if constexpr (skiff::scene::kErasedWalks) {
+      auto seen = skiff::scene::AnyNodeRef::of(part);
+      return skiff::scene::walk::animating(seen);
+    } else {
+      return skiff::scene::walk::animating(part);
+    }
+  }
+  skia::Sp<skia::SkImage> fFrozenBase, fFrozenPanel;
+  skia::SkRect fBaseAt = skia::SkRect::MakeEmpty(), fPanelAt = skia::SkRect::MakeEmpty();
+  float fPanelShiftAt = 0.0f;
 
   // Shown while the panel is out or moving; hidden once it is all the way
   // in.
