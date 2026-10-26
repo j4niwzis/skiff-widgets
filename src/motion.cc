@@ -6,6 +6,7 @@ import skia;
 import skiff.paint;
 import skiff.scene;
 import skiff.nodes;
+import skiff.compose;
 
 export namespace skiff::widgets {
 
@@ -27,6 +28,7 @@ public:
 template <class Child>
 class Collapsible : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Child>;
   template <class... Args>
   explicit Collapsible(Args &&...args) : fChild(std::forward<Args>(args)...) {
     fState.apply({.fillX = true, .masking = true});
@@ -36,6 +38,13 @@ public:
   [[nodiscard]] Child &child() noexcept { return fChild; }
   [[nodiscard]] const Child &child() const noexcept { return fChild; }
   [[nodiscard]] bool isOpen() const noexcept { return fOpen; }
+
+  // The first model value sets the initial state without an entrance
+  // animation; later changes fold the same child instead of remaking it.
+  void read(bool open) {
+    if (!std::exchange(fRead, true)) setOpenNow(open);
+    else if (open != fOpen) setOpen(open);
+  }
 
   // Open or shut, eased.
   void setOpen(bool open) {
@@ -60,7 +69,7 @@ public:
     return fUnfold.moving() || fChildHeight != fUsedHeight;
   }
   // Ticked while it unfolds, or has yet to hide what it folded away.
-  [[nodiscard]] bool wantsTick() const { return this->settling() || (!fOpen && fChild.fState.fVisible); }
+  [[nodiscard]] bool wantsTick() const { return this->settling() || (!fOpen && skiff::compose::state_of(fChild).fVisible); }
   void update(double nowMs) {
     if (fUnfold.step(nowMs) || fChildHeight != fUsedHeight) {
       this->invalidateLayout();
@@ -77,7 +86,7 @@ public:
 
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fChild.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fChild).arrange(0.0f, 0.0f);
     skiff::scene::layout(
         fChild, skia::SkRect::MakeXYWH(box.fLeft, box.fTop, box.width(), kRoom));
     if (fChild.visible()) {
@@ -91,17 +100,20 @@ private:
 
   Child fChild;
   skiff::paint::Eased fUnfold{0.0f, 70.0f, skiff::paint::movement::subtle{}};
-  bool fOpen = false;
+  bool fOpen = false, fRead = false;
   // The child's height, as its last layout found it, and the one the last
   // measure() used.
   float fChildHeight = 0.0f;
   float fUsedHeight = 0.0f;
 };
 
+template <class Child> Collapsible(Child) -> Collapsible<Child>;
+
 // One panel of a SlideOver, on a sheet of its own: it takes every press on
 // it, so nothing under it can be reached through it.
 template <class Over> class SlideLayer : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Over>;
   template <class... Args>
   explicit SlideLayer(skia::SkColor sheet, Args &&...args)
       : fOver(std::forward<Args>(args)...) {
@@ -130,7 +142,7 @@ public:
 
 private:
   template <class T> static void layOut(T &panel, const skia::SkRect &area) {
-    panel.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(panel).arrange(0.0f, 0.0f);
     skiff::scene::layout(panel, area);
   }
   template <class... Ts>
@@ -152,13 +164,14 @@ private:
 // view, a page opened from a page, in the one window. Each panel sits on a
 // sheet of its own colour and takes every press on it.
 //
-// Panels that have gone are destroyed by dropClosed(), which the program
-// calls between events once they have slid out: never inside a panel's own
-// handlers. It is a sweeping movement: below skiff::paint::motion::full the
-// panels come and go at once.
+// Panels that have gone are destroyed by the frame that ends their slide out
+// (update, a tick: never inside a panel's own handlers) -- nothing the
+// program calls. It is a sweeping movement: below skiff::paint::motion::full
+// the panels come and go at once.
 template <class Base, class Over>
 class SlideOver : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Base, Over>;
   template <class... Args>
   explicit SlideOver(Args &&...args) : fBase(std::forward<Args>(args)...) {
     fState.apply({.fill = true});
@@ -181,9 +194,16 @@ public:
   template <class... Args> Over &open(Args &&...args) {
     SlideLayer<Over> &made =
         fLayers.emplace_back(fSheetColour, std::forward<Args>(args)...);
+    skiff::scene::work::subtreeMade() = true;
     made.fSlide.jump(0.0f);
     made.fSlide.setTarget(1.0f);
     this->invalidateLayout();
+    // The base told it is about to be covered whole, where it cares (a
+    // drawer, whose close waits for that); covered at once where nothing
+    // slides.
+    if constexpr (requires(Base &base) { base.coverComing(); })
+      fBase.coverComing();
+    this->coverIfIn();
     return made.fOver;
   }
   // The top panel slides out, and the one under it is up again.
@@ -246,12 +266,15 @@ public:
     }
     if (moved) {
       this->invalidateLayout();
+      this->coverIfIn();
     }
+    // Those slid all the way out, gone with the frame that ended them.
+    this->dropClosed();
   }
 
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fBase.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fBase).arrange(0.0f, 0.0f);
     skiff::scene::layout(fBase, box);
     for (SlideLayer<Over> &layer : fLayers) {
       const float value = layer.fSlide.value();
@@ -263,6 +286,15 @@ public:
   }
 
 private:
+  // A panel all the way in: the base, covered whole, told so where it cares.
+  void coverIfIn() {
+    if constexpr (requires(Base &base) { base.covered(); })
+      if (std::ranges::any_of(fLayers, [](const SlideLayer<Over> &layer) {
+            return !layer.fClosing && !layer.fSlide.moving() && layer.fSlide.value() >= 1.0f;
+          }))
+        fBase.covered();
+  }
+
   Base fBase;
   // A deque: a panel is made in place and never moved.
   std::deque<SlideLayer<Over>> fLayers;
@@ -277,6 +309,11 @@ namespace dismiss {
 struct closes {};
 struct pressed {};
 } // namespace dismiss
+// A way of being dismissed that answers what the program makes of it -- a
+// part of its model set so: a type with a static answer(), what a press off
+// it or Esc is answered with, as the press is delivered.
+template <class Dismiss>
+concept AnswersDismissal = requires { Dismiss::answer(); };
 
 // A navigation drawer: a panel pulled out from the left edge over a base,
 // with the rest of the base dimmed under a scrim. A click on the scrim, or
@@ -287,6 +324,7 @@ struct pressed {};
 template <class Base, class Content, class Dismiss = dismiss::closes>
 class Drawer : public skiff::scene::Node {
 public:
+  using BindingChildren = std::tuple<Base, Content>;
   // The base and the panel, each made in place from its own arguments:
   // Drawer(std::piecewise_construct, std::forward_as_tuple(...),
   // std::forward_as_tuple(...)).
@@ -323,10 +361,35 @@ public:
     this->invalidateLayout();
   }
   void setOpen(bool open) {
+    // Pushed back while something slides in over it all: left where it is
+    // till that covers it, and gone then at once -- not two things moving.
+    if (!open && fCoverComing) {
+      fOpen = false;
+      fSlide.jump(fSlide.value());
+      fCloseWhenCovered = true;
+      return;
+    }
+    fCloseWhenCovered = false;
     fOpen = open;
     fSlide.setTarget(open ? 1.0f : 0.0f);
     this->showWhatMoves();
     this->invalidateLayout();
+  }
+  // Something sliding in over it whole (a page over the drawer and the
+  // base, told by the slide-over it is the base of): a push back asked for
+  // meanwhile waits for it; one under way stops where it is, to wait too.
+  void coverComing() {
+    fCoverComing = true;
+    if (!fOpen && fSlide.moving()) {
+      fSlide.jump(fSlide.value());
+      fCloseWhenCovered = true;
+    }
+  }
+  // Covered: what waited, done at once, unseen.
+  void covered() {
+    fCoverComing = false;
+    if (std::exchange(fCloseWhenCovered, false))
+      this->closeNow();
   }
 
   void forEachChild(auto &&f) {
@@ -353,7 +416,7 @@ public:
   // made -- a phone's stood still half out while it was.
   void layoutChildren() {
     const skia::SkRect box = fState.contentBox();
-    fBase.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fBase).arrange(0.0f, 0.0f);
     skiff::scene::layout(fBase, box);
     fScrim.apply({.width = box.width(), .height = box.height()});
     fScrim.fState.arrange(0.0f, 0.0f);
@@ -363,9 +426,49 @@ public:
     fSheet.apply({.width = fPanelWidth, .height = box.height()});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, panel);
-    fContent.fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(fContent).arrange(0.0f, 0.0f);
     skiff::scene::layout(fContent, panel);
     this->place();
+  }
+
+  // While it slides: the base, which does not move, and the panel, which
+  // only moves, each drawn once into pixels kept, and put down where they
+  // are at each frame -- the scrim darkening between them, the one thing
+  // drawn. Drawn whole at each frame, the scrim's change repainting the
+  // window, a phone drawing in software slid the drawer out at 10 frames a
+  // second: every chat in the list, every line of the panel, drawn again
+  // each time. Where the base moves too, or the slide is over, drawn as it
+  // is.
+  void draw(skiff::scene::Painting &painting, skia::SkCanvas *canvas, float alpha) {
+    namespace scene = skiff::scene;
+    skia::SkMatrix inverse;
+    if (!fSlide.moving() || moving(fBase) || !canvas->getTotalMatrix().invert(&inverse)) {
+      fFrozenBase = nullptr;
+      fFrozenPanel = nullptr;
+      scene::drawDefault(*this, painting, canvas, alpha);
+      return;
+    }
+    const skia::SkMatrix &matrix = canvas->getTotalMatrix();
+    if (!fFrozenBase)
+      fFrozenBase = frozen(matrix, scene::stateOf(fBase).fBounds, 0.0f, fBaseAt, [&](skia::SkCanvas &into) { scene::draw(fBase, painting, &into, alpha); });
+    if (!fFrozenPanel) {
+      // Drawn where it is all the way out: the shift it has now taken back.
+      fPanelShiftAt = fSheet.fState.fShiftX;
+      fFrozenPanel = frozen(matrix, fSheet.fState.fBounds, fPanelShiftAt, fPanelAt, [&](skia::SkCanvas &into) {
+        scene::draw(fSheet, painting, &into, alpha);
+        scene::draw(fContent, painting, &into, alpha);
+      });
+    }
+    if (!fFrozenBase || !fFrozenPanel) {
+      fFrozenBase = nullptr;
+      fFrozenPanel = nullptr;
+      scene::drawDefault(*this, painting, canvas, alpha);
+      return;
+    }
+    const skia::SkSamplingOptions nearest(skia::SkFilterMode::kNearest);
+    canvas->drawImageRect(fFrozenBase, inverse.mapRect(fBaseAt), nearest);
+    scene::draw(fScrim, painting, canvas, alpha);
+    canvas->drawImageRect(fFrozenPanel, inverse.mapRect(fPanelAt).makeOffset(fSheet.fState.fShiftX, 0.0f), nearest);
   }
 
   // A press on the scrim pushes the panel back.
@@ -411,6 +514,22 @@ public:
 private:
   void dismissed(dismiss::closes) { this->close(); }
   void dismissed(dismiss::pressed) { skiff::scene::pressLater(fState); }
+  template <AnswersDismissal D> void dismissed(D) { skiff::scene::pressLater(fState); }
+
+public:
+  // Out or in, as the model it is bound to says: slid there where it moves.
+  void read(bool open) {
+    if (open != fOpen)
+      this->setOpen(open);
+  }
+  // Pushed back: what its Dismiss answers.
+  auto onPress()
+    requires AnswersDismissal<Dismiss>
+  {
+    return Dismiss::answer();
+  }
+
+private:
 
   std::optional<skia::SkPoint> fSwipeFrom;
   // What covers the base: it takes the pointer, so a press off the panel
@@ -434,6 +553,39 @@ private:
   }
   float fPanelWidth = 0.0f;
 
+  // What lies in `bounds` (less a shift it is drawn with), drawn by `paint`
+  // into pixels of the device's size; `at`, where they go on the device.
+  template <class Paint>
+  static skia::Sp<skia::SkImage> frozen(const skia::SkMatrix &matrix, const skia::SkRect &bounds, float shift, skia::SkRect &at, Paint &&paint) {
+    const skia::SkRect device = matrix.mapRect(bounds);
+    const int width = std::max(1, static_cast<int>(std::ceil(device.width())));
+    const int height = std::max(1, static_cast<int>(std::ceil(device.height())));
+    skia::SkBitmap pixels;
+    if (!pixels.tryAllocN32Pixels(width, height))
+      return nullptr;
+    pixels.eraseColor(0);
+    skia::SkCanvas into(pixels);
+    into.translate(-device.fLeft, -device.fTop);
+    into.concat(matrix);
+    into.translate(-shift, 0.0f);
+    paint(into);
+    at = skia::SkRect::MakeXYWH(device.fLeft, device.fTop, static_cast<float>(width), static_cast<float>(height));
+    return pixels.asImage();
+  }
+  // Whether anything in a part moves: seen as the walks see it, through
+  // whatever holds it.
+  template <class Part> static bool moving(Part &part) {
+    if constexpr (skiff::scene::kErasedWalks) {
+      auto seen = skiff::scene::AnyNodeRef::of(part);
+      return skiff::scene::walk::animating(seen);
+    } else {
+      return skiff::scene::walk::animating(part);
+    }
+  }
+  skia::Sp<skia::SkImage> fFrozenBase, fFrozenPanel;
+  skia::SkRect fBaseAt = skia::SkRect::MakeEmpty(), fPanelAt = skia::SkRect::MakeEmpty();
+  float fPanelShiftAt = 0.0f;
+
   // Shown while the panel is out or moving; hidden once it is all the way
   // in.
   void showWhatMoves() {
@@ -450,6 +602,9 @@ private:
   skiff::paint::Tween fSlide{0.0f, 220.0f, skiff::paint::movement::sweeping{}};
   float fWidth = 300.0f;
   bool fOpen = false;
+  // A cover sliding in over it, and a push back waiting for it.
+  bool fCoverComing = false;
+  bool fCloseWhenCovered = false;
 };
 
 // Where a dialog's box stands: in the middle of the window; or near its top,
@@ -470,9 +625,10 @@ using DialogPlace = spl::variant<dialog_place::centred, dialog_place::near_top>;
 // A box in the middle of the window over a dimmed background, as a settings
 // or confirmation dialog: it fades in, and a press off it or Esc from inside
 // it fades it out. It is a layer of its own -- it fills its parent and goes
-// last among the parent's children -- and holds nothing while shut. The
-// program destroys a shut one with dropClosed(), between events. It is a
-// subtle movement: at skiff::paint::motion::none it comes and goes at once.
+// last among the parent's children -- and holds nothing while shut: what it showed is destroyed by the
+// frame that ends its fade (update, a tick, never inside its content's own
+// handlers), nothing the program calls. It is a subtle movement: at
+// skiff::paint::motion::none it comes and goes at once.
 template <class Content, class Dismiss = dismiss::closes>
 class Dialog : public skiff::scene::Node {
 public:
@@ -519,6 +675,7 @@ public:
   template <class... Args> Content &open(Args &&...args) {
     const bool up = this->shown() != nullptr;
     fContent.emplace(std::forward<Args>(args)...);
+    skiff::scene::work::subtreeMade() = true;
     fClosing = false;
     if (!up) {
       fFade.jump(0.0f);
@@ -557,11 +714,14 @@ public:
   }
 
   [[nodiscard]] bool settling() const { return fFade.moving(); }
-  [[nodiscard]] bool wantsTick() const { return this->settling(); }
+  // Ticked while it fades, and once more where it has faded out with its
+  // content still there to drop.
+  [[nodiscard]] bool wantsTick() const { return this->settling() || (fContent && fClosing); }
   void update(double nowMs) {
     if (fFade.step(nowMs)) {
       this->showFade();
     }
+    this->dropClosed();
   }
 
   void layoutChildren() {
@@ -584,16 +744,16 @@ public:
     const float most = top ? box.height() - 2.0f * *top : box.height() * 0.9f;
     float height = std::min(fHeight, most);
     if (fFitsContent) {
-      fContent->fState.arrange(0.0f, 0.0f);
+      skiff::compose::state_of(*fContent).arrange(0.0f, 0.0f);
       skiff::scene::layout(*fContent, skia::SkRect::MakeXYWH(box.fLeft, box.fTop, width, most));
-      height = std::min(fContent->fState.fBounds.height(), most);
+      height = std::min(skiff::compose::state_of(*fContent).fBounds.height(), most);
     }
     const skia::SkRect area = skia::SkRect::MakeXYWH(
         box.centerX() - width * 0.5f, top ? box.fTop + *top : box.centerY() - height * 0.5f, width, height);
     fSheet.apply({.width = width, .height = height});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, area);
-    fContent->fState.arrange(0.0f, 0.0f);
+    skiff::compose::state_of(*fContent).arrange(0.0f, 0.0f);
     skiff::scene::layout(*fContent, area);
   }
 
@@ -621,6 +781,17 @@ public:
 private:
   void dismissed(dismiss::closes) { this->close(); }
   void dismissed(dismiss::pressed) { skiff::scene::pressLater(fState); }
+  template <AnswersDismissal D> void dismissed(D) { skiff::scene::pressLater(fState); }
+
+public:
+  // Pressed off, or Esc: what its Dismiss answers.
+  auto onPress()
+    requires AnswersDismissal<Dismiss>
+  {
+    return Dismiss::answer();
+  }
+
+private:
 
   class Scrim : public skiff::nodes::Box<> {
   public:
@@ -636,7 +807,7 @@ private:
     fScrim.fState.setAlpha(value);
     fSheet.fState.setAlpha(value);
     if (fContent) {
-      fContent->fState.setAlpha(value);
+      skiff::compose::state_of(*fContent).setAlpha(value);
     }
   }
 
@@ -650,6 +821,39 @@ private:
   DialogPlace fPlace = dialog_place::centred{};
   bool fDismissable = true;
   bool fClosing = false;
+};
+
+// A container -- a dialog, a slide-over -- up while the part of a model it
+// reads holds facts, and going as it goes where the part holds none. What
+// it holds is Make's (a type the program gives it, holding what it needs):
+// made from the facts as it opens -- make(facts) -- and kept while
+// make.stands(up, made, now) says what is up, made from `made`, still
+// stands for the facts now (a page
+// that reads them itself, the same room's settings), made again where not;
+// before either, make.put(container, facts) puts it as they say (its size,
+// whether a press off it closes it).
+template <class Container, class Facts, class Make>
+class Shown : public Container {
+public:
+  template <class... Args>
+  explicit Shown(Make make, Args &&...args) : Container(std::forward<Args>(args)...), fMake(std::move(make)) {}
+  void read(const std::optional<Facts> &now) {
+    if (!now) {
+      if (this->shown())
+        this->close();
+      return;
+    }
+    fMake.put(static_cast<Container &>(*this), *now);
+    if (auto *up = this->shown(); up && fMade && fMake.stands(*up, *fMade, *now))
+      return;
+    this->open(fMake.make(*now));
+    fMade = *now;
+  }
+
+private:
+  Make fMake;
+  // The facts what is up was made from.
+  std::optional<Facts> fMade;
 };
 
 } // namespace skiff::widgets

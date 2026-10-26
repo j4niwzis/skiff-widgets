@@ -36,7 +36,7 @@ enable_testing()
 
 # The scene's widgets' tests, where the scene is built: they draw through Skia.
 if(TARGET skiff::widgets)
-add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets.cc)
+add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/widgets.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/motion.cc)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   gtest
   gtest_main

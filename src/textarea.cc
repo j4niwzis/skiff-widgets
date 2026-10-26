@@ -46,6 +46,7 @@ struct TextAtom {
   // What it is once unmarked, to be edited, where that is not what it reads
   // as: a mention sent by its name, taken apart into its user's id.
   std::string unmarked;
+  friend bool operator==(const TextAtom &, const TextAtom &) = default;
 };
 // Blocks: what the program makes of whole paragraphs -- a quote, say --
 // given as the field's `Blocks` parameter, a type with static members; the
@@ -155,6 +156,204 @@ struct FieldChange {
   std::size_t caret = 0;
   std::size_t anchor = 0;
 };
+// What a field holds, as a value: its text, its atoms and its spans, and
+// the selection (the caret and where it was started from). The field keeps
+// one and edits it with the functions below; a program that keeps what is
+// written itself -- a message's draft -- keeps one too and edits it with the
+// same functions, and a field bound to it shows it (TextArea::read).
+template <class Format>
+struct TextDocument {
+  std::string text;
+  std::vector<TextAtom> atoms;
+  std::vector<TextSpan<Format>> spans;
+  std::size_t caret = 0;
+  std::size_t anchor = 0;
+  [[nodiscard]] std::size_t low() const noexcept { return std::min(caret, anchor); }
+  [[nodiscard]] std::size_t high() const noexcept { return std::max(caret, anchor); }
+  [[nodiscard]] bool selection() const noexcept { return caret != anchor; }
+  friend bool operator==(const TextDocument &, const TextDocument &) = default;
+};
+// Whether text typed at a span's end goes into it: never, for a document
+// edited where no format grows.
+struct GrowsNever {
+  template <class Format> [[nodiscard]] bool operator()(const Format &) const noexcept { return false; }
+};
+
+// Editing a document. Offsets are bytes of its text; atoms and spans move
+// with every edit, as typing moves them. `grows` says of a span's format
+// whether text put in at its end goes into it.
+namespace document {
+// What is selected, as text.
+template <class Format>
+[[nodiscard]] std::string selected(const TextDocument<Format> &doc) {
+  return doc.text.substr(doc.low(), doc.high() - doc.low());
+}
+// The text with each atom as it reads plain: what is sent.
+template <class Format>
+[[nodiscard]] std::string plain(const TextDocument<Format> &doc) {
+  std::string out;
+  std::size_t at = 0;
+  for (const TextAtom &one : doc.atoms) {
+    out.append(doc.text, at, one.first - at);
+    out += one.plain;
+    at = one.last;
+  }
+  out.append(doc.text, at);
+  return out;
+}
+// An offset in the text, as it is in plain(): atoms before it as long as
+// they read; one inside an atom at its start.
+template <class Format>
+[[nodiscard]] std::size_t plainOffset(const TextDocument<Format> &doc, std::size_t at) {
+  return std::ranges::fold_left(doc.atoms, at, [&](std::size_t out, const TextAtom &one) {
+    if (one.last <= at)
+      return out + one.plain.size() - (one.last - one.first);
+    if (one.first < at)
+      return out - (at - one.first);
+    return out;
+  });
+}
+// The spans by offsets in plain(): what is sent with it.
+template <class Format>
+[[nodiscard]] std::vector<TextSpan<Format>> plainSpans(const TextDocument<Format> &doc) {
+  return doc.spans | std::views::transform([&](const TextSpan<Format> &one) {
+           return TextSpan<Format>{plainOffset(doc, one.first), plainOffset(doc, one.last), one.format};
+         }) | std::ranges::to<std::vector>();
+}
+// The spans over [from, to), cut to it, by offsets from `from`.
+template <class Format>
+[[nodiscard]] std::vector<TextSpan<Format>> spansIn(const TextDocument<Format> &doc, std::size_t from, std::size_t to) {
+  return doc.spans | std::views::filter([&](const TextSpan<Format> &one) { return one.first < to && one.last > from; }) | std::views::transform([&](const TextSpan<Format> &one) {
+           return TextSpan<Format>{std::max(one.first, from) - from, std::min(one.last, to) - from, one.format};
+         }) | std::ranges::to<std::vector>();
+}
+// Spans moved for text put in at `at`: on past it, or longer where it went
+// into one -- at a span's end too, where the format grows.
+template <class Format, class Grows>
+void spansInserted(TextDocument<Format> &doc, std::size_t at, std::size_t size, const Grows &grows) {
+  std::ranges::transform(doc.spans, doc.spans.begin(), [&](TextSpan<Format> one) {
+    if (one.first >= at)
+      return TextSpan<Format>{one.first + size, one.last + size, std::move(one.format)};
+    if (one.last > at || (one.last == at && grows(one.format)))
+      return TextSpan<Format>{one.first, one.last + size, std::move(one.format)};
+    return one;
+  });
+}
+// Spans moved for [from, to) taken out: what was in it gone from them, and
+// a span left empty dropped.
+template <class Format>
+void spansErased(TextDocument<Format> &doc, std::size_t from, std::size_t to) {
+  const auto moved = [&](std::size_t at) { return at <= from ? at : at >= to ? at - (to - from) : from; };
+  std::ranges::transform(doc.spans, doc.spans.begin(), [&](TextSpan<Format> one) {
+    return TextSpan<Format>{moved(one.first), moved(one.last), std::move(one.format)};
+  });
+  std::erase_if(doc.spans, [](const TextSpan<Format> &one) { return one.first >= one.last; });
+}
+// Spans kept within the text: cut to its end, those left empty dropped.
+template <class Format>
+void keepSpansIn(TextDocument<Format> &doc) {
+  std::ranges::transform(doc.spans, doc.spans.begin(), [&](TextSpan<Format> one) {
+    const std::size_t last = std::min(one.last, doc.text.size());
+    return TextSpan<Format>{std::min(one.first, last), last, std::move(one.format)};
+  });
+  std::erase_if(doc.spans, [](const TextSpan<Format> &one) { return one.first >= one.last; });
+}
+// Atoms at or past `from` moved by `by` bytes -- and, for text put in, the
+// spans too (text taken out moves them in eraseText).
+template <class Format, class Grows>
+void shiftAtoms(TextDocument<Format> &doc, std::size_t from, std::ptrdiff_t by, const Grows &grows) {
+  if (by > 0)
+    spansInserted(doc, from, static_cast<std::size_t>(by), grows);
+  const auto moved = [&](std::size_t at) { return static_cast<std::size_t>(static_cast<std::ptrdiff_t>(at) + by); };
+  std::ranges::transform(doc.atoms, doc.atoms.begin(), [&](TextAtom one) {
+    if (one.first >= from) {
+      one.first = moved(one.first);
+      one.last = moved(one.last);
+    }
+    return one;
+  });
+}
+// Text taken out: atoms it cuts into gone, those after it moved back.
+template <class Format, class Grows>
+void eraseText(TextDocument<Format> &doc, std::size_t from, std::size_t to, const Grows &grows) {
+  doc.text.erase(from, to - from);
+  spansErased(doc, from, to);
+  std::erase_if(doc.atoms, [&](const TextAtom &one) { return one.first < to && one.last > from; });
+  shiftAtoms(doc, to, -static_cast<std::ptrdiff_t>(to - from), grows);
+}
+// [from, to) replaced by `with`, the atoms and spans moved along; the
+// selection left as it was.
+template <class Format, class Grows>
+void replace(TextDocument<Format> &doc, std::size_t from, std::size_t to, std::string_view with, const Grows &grows) {
+  from = std::min(from, doc.text.size());
+  to = std::clamp(to, from, doc.text.size());
+  eraseText(doc, from, to, grows);
+  doc.text.insert(from, with);
+  shiftAtoms(doc, from, static_cast<std::ptrdiff_t>(with.size()), grows);
+}
+// Text put in at the caret, over what is selected, as if typed: the caret
+// after it. Typed inside an atom, the atom is text again.
+template <class Format, class Grows>
+void insert(TextDocument<Format> &doc, std::string_view typed, const Grows &grows) {
+  if (doc.selection()) {
+    const std::size_t from = doc.low();
+    eraseText(doc, from, doc.high(), grows);
+    doc.caret = doc.anchor = from;
+  }
+  std::erase_if(doc.atoms, [&](const TextAtom &one) { return doc.caret > one.first && doc.caret < one.last; });
+  doc.text.insert(doc.caret, typed);
+  shiftAtoms(doc, doc.caret, static_cast<std::ptrdiff_t>(typed.size()), grows);
+  doc.caret += typed.size();
+  doc.anchor = doc.caret;
+}
+// An atom put in at the caret, over what is selected: `shown` drawn as a
+// pill for `target`, read as `plain`.
+template <class Format, class Grows>
+void insertAtom(TextDocument<Format> &doc, std::string shown, std::string target, std::string plain, bool picture,
+                std::string unmarked, const Grows &grows) {
+  const std::size_t size = shown.size();
+  insert(doc, shown, grows);
+  doc.atoms.push_back({doc.caret - size, doc.caret, std::move(target), std::move(plain), picture, std::move(unmarked)});
+  std::ranges::sort(doc.atoms, {}, &TextAtom::first);
+}
+// What was copied put in at the caret, over what is selected: its text as
+// it was shown, its pictures and pills atoms again where they were.
+template <class Format, class Grows>
+void insertFragment(TextDocument<Format> &doc, const skiff::scene::ClipboardFragment &fragment, const Grows &grows) {
+  const std::size_t at = doc.selection() ? doc.low() : doc.caret;
+  insert(doc, fragment.display, grows);
+  std::ranges::move(fragment.atoms | std::views::filter([&](const auto &atom) {
+                      return atom.first <= atom.last && atom.last <= fragment.display.size();
+                    }) | std::views::transform([&](const auto &atom) {
+                      return TextAtom{at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}};
+                    }),
+                    std::back_inserter(doc.atoms));
+  std::ranges::sort(doc.atoms, {}, &TextAtom::first);
+}
+// What is between two offsets selected.
+template <class Format>
+void select(TextDocument<Format> &doc, std::size_t from, std::size_t to) {
+  doc.anchor = std::min(from, doc.text.size());
+  doc.caret = std::min(to, doc.text.size());
+}
+// Its spans set anew: as they are given, those past the text cut to it.
+template <class Format>
+void setSpans(TextDocument<Format> &doc, std::vector<TextSpan<Format>> spans) {
+  doc.spans = std::move(spans);
+  keepSpansIn(doc);
+}
+// A document of this text alone, the caret at its end.
+template <class Format>
+[[nodiscard]] TextDocument<Format> of(std::string text) {
+  const std::size_t end = text.size();
+  return {.text = std::move(text), .caret = end, .anchor = end};
+}
+}  // namespace document
+
+// What a document-bound field answers (TextArea's OnSubmit with
+// kEveryDocument): each edit, and Enter -- each with the document as it is.
+struct DocumentEdited {};
+struct DocumentSubmitted {};
 // What a field of a format last copied or cut, and its spans by offsets in
 // it: one for all the fields of that format, as the clipboard is one.
 template <class Format>
@@ -355,7 +554,25 @@ public:
     fState.fHeight = this->heightFor(1);
   }
 
-  [[nodiscard]] const std::string &text() const noexcept { return fText; }
+  [[nodiscard]] const std::string &text() const noexcept { return fDoc.text; }
+  // All it holds, as a value: what a program keeping it is told.
+  [[nodiscard]] const TextDocument<Format> &document() const noexcept { return fDoc; }
+  // Shown as a program keeping what is written says it is: where it is
+  // another than the field's own -- the program put a link in, or another
+  // draft -- that, a step of undo; what the field itself told comes back as
+  // it is, and nothing moves.
+  void read(const TextDocument<Format> &now) {
+    if (now == fDoc)
+      return;
+    this->remember(false);
+    this->breakRun();
+    fComposed.reset();
+    fDoc = now;
+    document::select(fDoc, fDoc.anchor, fDoc.caret);
+    this->showCaret();
+    this->invalidateLayout();
+    this->markDamaged();
+  }
   // Its pictures and blocks: what an erased field is told of its own.
   void setPictures(Pictures pictures) { fPictures = std::move(pictures); }
   void setBlocks(Blocks blocks) { fBlocks = std::move(blocks); }
@@ -370,43 +587,35 @@ public:
       this->insert(fragment.text);
       return;
     }
-    const std::size_t at = this->hasSelection() ? this->low() : fCaret;
-    this->insert(fragment.display);
-    for (const auto& atom : fragment.atoms)
-      if (atom.first <= atom.last && atom.last <= fragment.display.size())
-        fAtoms.push_back({at + atom.first, at + atom.last, atom.target, atom.plain, atom.picture, {}});
-    std::ranges::sort(fAtoms, {}, &Atom::first);
-    this->markDamaged();
+    // One step of undo for the text and its atoms both.
+    this->remember(false);
+    document::insertFragment(fDoc, fragment, this->grows());
+    this->edited();
   }
   void setText(std::string text) {
     fUndo.clear();
     fRedo.clear();
     this->breakRun();
-    fText = std::move(text);
-    fAtoms.clear();
-    fSpans.clear();
-    fCaret = fAnchor = fText.size();
+    fDoc.text = std::move(text);
+    fDoc.atoms.clear();
+    fDoc.spans.clear();
+    fDoc.caret = fDoc.anchor = fDoc.text.size();
     this->edited();
   }
   // Its spans: the program's formats over runs of the text, by offsets in
   // text(). Set: as they are given, those past the text cut to it.
-  [[nodiscard]] const std::vector<Span> &spans() const noexcept { return fSpans; }
+  [[nodiscard]] const std::vector<Span> &spans() const noexcept { return fDoc.spans; }
   void setSpans(std::vector<Span> spans) {
-    fSpans = std::move(spans);
+    fDoc.spans = std::move(spans);
     this->keepSpansIn();
     this->edited();
   }
   // The spans by offsets in plainText(): what is sent with it.
-  [[nodiscard]] std::vector<Span> plainSpans() const {
-    return std::ranges::to<std::vector<Span>>(std::views::transform(fSpans, [this](const Span &one) {
-      return Span{this->plainOffset(one.first), this->plainOffset(one.last), one.format};
-    }));
-  }
+  [[nodiscard]] std::vector<Span> plainSpans() const { return document::plainSpans(fDoc); }
   // What is between two offsets selected, as a picker replaces what was
   // typed for it (an @ and a name begun).
   void select(std::size_t from, std::size_t to) {
-    fAnchor = std::min(from, fText.size());
-    fCaret = std::min(to, fText.size());
+    document::select(fDoc, from, to);
     this->showCaret();
   }
   // An atom put in at the caret, over what is selected: `shown` drawn as a
@@ -418,23 +627,13 @@ public:
     }
     const std::size_t size = shown.size();
     this->insert(std::move(shown));
-    fAtoms.push_back({fCaret - size, fCaret, std::move(target), std::move(plain), picture, std::move(unmarked)});
-    std::ranges::sort(fAtoms, {}, &Atom::first);
+    fDoc.atoms.push_back({fDoc.caret - size, fDoc.caret, std::move(target), std::move(plain), picture, std::move(unmarked)});
+    std::ranges::sort(fDoc.atoms, {}, &Atom::first);
     this->markDamaged();
   }
-  [[nodiscard]] const std::vector<Atom> &atoms() const noexcept { return fAtoms; }
+  [[nodiscard]] const std::vector<Atom> &atoms() const noexcept { return fDoc.atoms; }
   // The text with each atom as it reads plain: what is sent.
-  [[nodiscard]] std::string plainText() const {
-    std::string out;
-    std::size_t at = 0;
-    for (const Atom &one : fAtoms) {
-      out.append(fText, at, one.first - at);
-      out += one.plain;
-      at = one.last;
-    }
-    out.append(fText, at);
-    return out;
-  }
+  [[nodiscard]] std::string plainText() const { return document::plain(fDoc); }
   // One line only: no wrapping, a newline never typed.
   void setSingleLine(bool single) {
     fMaxLines = single ? 1 : std::max(fMaxLines, 8);
@@ -458,7 +657,7 @@ public:
     fFontSize = size;
     this->invalidateLayout();
   }
-  [[nodiscard]] bool hasSelection() const noexcept { return fCaret != fAnchor; }
+  [[nodiscard]] bool hasSelection() const noexcept { return fDoc.caret != fDoc.anchor; }
   // What is selected: from its start to its end, the caret either.
   [[nodiscard]] std::pair<std::size_t, std::size_t> selectionRange() const noexcept { return {this->low(), this->high()}; }
 
@@ -524,38 +723,68 @@ public:
       const std::size_t pressed = this->outOfAtoms(this->offsetAt(at.x, at.y));
       if (!this->hasSelection() || pressed < this->low() || pressed > this->high()) {
         this->breakRun();
-        fCaret = fAnchor = pressed;
+        fDoc.caret = fDoc.anchor = pressed;
       }
       this->showCaret();
       skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{
           .selection = this->hasSelection(), .masked = fMasked, .formats = kFormatsIn<Format> && !fSingle,
-          .undo = !fUndo.empty(), .redo = !fRedo.empty(), .text = !fText.empty()});
+          .undo = !fUndo.empty(), .redo = !fRedo.empty(), .text = !fDoc.text.empty()});
       reply.handle();
       return;
     }
+    // By a finger: nothing put yet -- a drag scrolls the lines, as a
+    // phone's fields do, and a tap puts the caret where it is let go.
+    // Selected as a mouse selects, a long text could not be read through:
+    // every drag selected, and stopped nowhere it was meant to (a tester).
+    // Selecting is the long press's (its menu).
+    if (skiff::scene::hostWork().byTouch) {
+      fTouch = TouchDrag{.from = skia::SkPoint{at.x, at.y}, .first = this->firstShown()};
+      reply.capturePointer();
+      return;
+    }
     this->breakRun();  // the caret put elsewhere: what is typed next is a step of its own
-    fCaret = this->outOfAtoms(this->offsetAt(at.x, at.y));
-    fAnchor = fCaret;
+    fDoc.caret = this->outOfAtoms(this->offsetAt(at.x, at.y));
+    fDoc.anchor = fDoc.caret;
     fDragging = true;
     reply.capturePointer();
     this->showCaret();
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::move &at,
                  skiff::scene::PointerReply &reply) {
+    if (fTouch) {
+      const float dy = at.y - fTouch->from.fY;
+      fTouch->scrolling = fTouch->scrolling || std::abs(dy) > kTouchSlop;
+      if (fTouch->scrolling) {
+        const int before = this->firstShown();
+        fFirst = fTouch->first - static_cast<int>(std::lround(dy / (fFontSize * kLineSpacing)));
+        if (this->firstShown() != before)
+          this->markDamaged();
+        reply.handle();
+      }
+      return;
+    }
     if (!fDragging) {
       return;
     }
-    fCaret = this->outOfAtoms(this->offsetAt(at.x, at.y));
+    fDoc.caret = this->outOfAtoms(this->offsetAt(at.x, at.y));
     this->showCaret();
     reply.handle();
   }
-  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &,
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &at,
                  skiff::scene::PointerReply &reply) {
+    // A finger let go where it went down: the caret there.
+    if (const auto touch = std::exchange(fTouch, std::nullopt); touch && !touch->scrolling) {
+      this->breakRun();
+      fDoc.caret = this->outOfAtoms(this->offsetAt(at.x, at.y));
+      fDoc.anchor = fDoc.caret;
+      this->showCaret();
+    }
     fDragging = false;
     reply.releasePointer();
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
                  skiff::scene::PointerReply &reply) {
+    fTouch.reset();
     fDragging = false;
     reply.releasePointer();
   }
@@ -569,7 +798,7 @@ public:
     // The program's blocks first, as for a key: what is typed may become
     // something else where it goes -- "--" a dash.
     if (!typed.text.empty() && !fMasked && !fSingle && !this->hasSelection()) {
-      if (std::optional<TextEdit> edit = typedBy(fBlocks, fText, fCaret, typed.text)) {
+      if (std::optional<TextEdit> edit = typedBy(fBlocks, fDoc.text, fDoc.caret, typed.text)) {
         this->applyEdit(*edit);
         reply.handle();
         return;
@@ -591,19 +820,19 @@ public:
     this->remember(false);
     this->breakRun();
     for (const TextReplace &one : change.edits) {
-      const std::size_t from = std::min(one.from, fText.size());
-      const std::size_t to = std::clamp(one.to, from, fText.size());
+      const std::size_t from = std::min(one.from, fDoc.text.size());
+      const std::size_t to = std::clamp(one.to, from, fDoc.text.size());
       this->eraseText(from, to);
-      fText.insert(from, one.with);
+      fDoc.text.insert(from, one.with);
       this->shiftAtoms(from, static_cast<std::ptrdiff_t>(one.with.size()));
     }
     if (change.spans) {
-      fSpans = std::move(*change.spans);
+      fDoc.spans = std::move(*change.spans);
     }
-    std::ranges::move(change.added, std::back_inserter(fSpans));
+    std::ranges::move(change.added, std::back_inserter(fDoc.spans));
     this->keepSpansIn();
-    fCaret = this->outOfAtoms(std::min(change.caret, fText.size()), true);
-    fAnchor = std::min(change.anchor, fText.size());
+    fDoc.caret = this->outOfAtoms(std::min(change.caret, fDoc.text.size()), true);
+    fDoc.anchor = std::min(change.anchor, fDoc.text.size());
     this->edited();
   }
   // An input method's composition -- a phone keyboard's word as it is typed,
@@ -615,9 +844,9 @@ public:
               skiff::scene::Reply &reply) {
     this->dropComposition();
     if (!composing.text.empty()) {
-      const std::size_t from = this->hasSelection() ? this->low() : fCaret;
+      const std::size_t from = this->hasSelection() ? this->low() : fDoc.caret;
       this->insert(std::string(composing.text));
-      fComposed = std::pair{from, fCaret};
+      fComposed = std::pair{from, fDoc.caret};
     }
     reply.handle();
   }
@@ -626,8 +855,8 @@ public:
       return;
     }
     const auto [from, to] = *std::exchange(fComposed, std::nullopt);
-    this->eraseText(from, std::min(to, fText.size()));
-    fCaret = fAnchor = from;
+    this->eraseText(from, std::min(to, fDoc.text.size()));
+    fDoc.caret = fDoc.anchor = from;
     this->edited();
   }
   // A block's edit put in: a step of its own to undo.
@@ -635,9 +864,9 @@ public:
     this->remember(false);
     this->breakRun();
     this->eraseText(edit.from, edit.to);
-    fText.insert(edit.from, edit.with);
+    fDoc.text.insert(edit.from, edit.with);
     this->shiftAtoms(edit.from, static_cast<std::ptrdiff_t>(edit.with.size()));
-    fCaret = fAnchor = this->outOfAtoms(std::min(edit.caret, fText.size()), true);
+    fDoc.caret = fDoc.anchor = this->outOfAtoms(std::min(edit.caret, fDoc.text.size()), true);
     this->edited();
   }
 
@@ -649,9 +878,9 @@ public:
     const bool shift = press.modifiers.has<modifier::shift>();
     const bool control = press.modifiers.has<modifier::control>();
     const auto move = [&](std::size_t to) {
-      fCaret = this->outOfAtoms(to, to > fCaret);
+      fDoc.caret = this->outOfAtoms(to, to > fDoc.caret);
       if (!shift) {
-        fAnchor = fCaret;
+        fDoc.anchor = fDoc.caret;
       }
     };
     // Back a step, and forward again: Ctrl+Z; Ctrl+Shift+Z or Ctrl+Y.
@@ -685,7 +914,7 @@ public:
     // The program's blocks next: a key that means something in one of
     // them -- Enter in a quote -- is theirs.
     if (!fMasked && !fSingle && !this->hasSelection()) {
-      if (std::optional<TextEdit> edit = fBlocks.key(fText, fCaret, press)) {
+      if (std::optional<TextEdit> edit = fBlocks.key(fDoc.text, fDoc.caret, press)) {
         this->applyEdit(*edit);
         reply.handle();
         return;
@@ -707,8 +936,8 @@ public:
         return; // a form's to act on
       }
     } else if (control && press.key == keys::kA) {
-      fAnchor = 0;
-      fCaret = fText.size();
+      fDoc.anchor = 0;
+      fDoc.caret = fDoc.text.size();
     } else if (control && (press.key == keys::kC || press.key == keys::kX)) {
       // Nothing selected here: not this field's to take -- the window may
       // copy what is selected elsewhere.
@@ -716,7 +945,7 @@ public:
         return;
       }
       std::vector<skiff::scene::ClipboardAtom> atoms;
-      for (const auto& atom : fAtoms)
+      for (const auto& atom : fDoc.atoms)
         if (atom.first >= this->low() && atom.last <= this->high())
           atoms.push_back({atom.first - this->low(), atom.last - this->low(), atom.target, atom.plain, atom.picture});
       auto copied = skiff::scene::clipboardFragment(this->selected(), std::move(atoms));
@@ -734,7 +963,7 @@ public:
       if (fSingle) {
         std::ranges::replace(pasted, '\n', ' ');
       }
-      const std::size_t at = this->hasSelection() ? this->low() : fCaret;
+      const std::size_t at = this->hasSelection() ? this->low() : fDoc.caret;
       // What this field copied, with its spans -- unless Shift asks for it
       // plain (Ctrl+Shift+V).
       const bool formatted = !shift && !fSingle && !fMasked && Copied() && Copied()->text == pasted;
@@ -745,50 +974,49 @@ public:
       else
         this->insert(std::move(pasted));
       if (formatted) {
-        std::ranges::move(std::views::transform(Copied()->spans,
-                                                [at](Span one) {
+        std::ranges::move(Copied()->spans | std::views::transform([at](Span one) {
                                                   one.first += at;
                                                   one.last += at;
                                                   return one;
                                                 }),
-                          std::back_inserter(fSpans));
+                          std::back_inserter(fDoc.spans));
         this->keepSpansIn();
         this->markDamaged();
       }
     } else if (press.key == keys::kBackspace) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
-      } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::last); atom != fAtoms.end()) {
+      } else if (const auto atom = std::ranges::find(fDoc.atoms, fDoc.caret, &Atom::last); atom != fDoc.atoms.end()) {
         this->unmark(atom);
-      } else if (fCaret > 0) {
-        this->erase(control ? wordBefore(fText, fCaret) : previous(fText, fCaret), fCaret);
+      } else if (fDoc.caret > 0) {
+        this->erase(control ? wordBefore(fDoc.text, fDoc.caret) : previous(fDoc.text, fDoc.caret), fDoc.caret);
       }
     } else if (press.key == keys::kDelete) {
       if (this->hasSelection()) {
         this->erase(this->low(), this->high());
-      } else if (const auto atom = std::ranges::find(fAtoms, fCaret, &Atom::first); atom != fAtoms.end()) {
+      } else if (const auto atom = std::ranges::find(fDoc.atoms, fDoc.caret, &Atom::first); atom != fDoc.atoms.end()) {
         const std::size_t first = atom->first;
         this->unmark(atom);
-        fCaret = fAnchor = first;
-      } else if (fCaret < fText.size()) {
-        this->erase(fCaret, control ? wordAfter(fText, fCaret) : next(fText, fCaret));
+        fDoc.caret = fDoc.anchor = first;
+      } else if (fDoc.caret < fDoc.text.size()) {
+        this->erase(fDoc.caret, control ? wordAfter(fDoc.text, fDoc.caret) : next(fDoc.text, fDoc.caret));
       }
     } else if (press.key == keys::kLeft) {
       if (this->hasSelection() && !shift) {
         move(this->low());
       } else {
-        move(control ? wordBefore(fText, fCaret) : previous(fText, fCaret));
+        move(control ? wordBefore(fDoc.text, fDoc.caret) : previous(fDoc.text, fDoc.caret));
       }
     } else if (press.key == keys::kRight) {
       if (this->hasSelection() && !shift) {
         move(this->high());
       } else {
-        move(control ? wordAfter(fText, fCaret) : next(fText, fCaret));
+        move(control ? wordAfter(fDoc.text, fDoc.caret) : next(fDoc.text, fDoc.caret));
       }
     } else if (press.key == keys::kHome) {
-      move(control || fLines.empty() ? 0 : fLines[this->lineOf(fCaret)].fStart);
+      move(control || fLines.empty() ? 0 : fLines[this->lineOf(fDoc.caret)].fStart);
     } else if (press.key == keys::kEnd) {
-      move(control || fLines.empty() ? fText.size() : fLines[this->lineOf(fCaret)].fEnd);
+      move(control || fLines.empty() ? fDoc.text.size() : fLines[this->lineOf(fDoc.caret)].fEnd);
     } else if (press.key == keys::kUp || press.key == keys::kDown) {
       // With Ctrl, or past the first or the last line: not the field's --
       // the window's, as a chat's input gives Up to editing the last message
@@ -797,7 +1025,7 @@ public:
         return;
       }
       const std::size_t to = this->lineMoved(press.key == keys::kUp ? -1 : 1);
-      if (to == fCaret) {
+      if (to == fDoc.caret) {
         return;
       }
       move(to);
@@ -813,7 +1041,7 @@ public:
     out.fRole = skiff::scene::semantic_role::text_box{};
     out.fLabel = fPlaceholder;
     if (!fMasked) {
-      out.fValue = fText;
+      out.fValue = fDoc.text;
     }
     out.fActions = {skiff::scene::semantic_action::focus{}};
     return out;
@@ -825,7 +1053,7 @@ public:
     p.clipRect(box);
     const float lineHeight = fFontSize * kLineSpacing;
     const float shift = this->scrollX(p);
-    if (fText.empty()) {
+    if (fDoc.text.empty()) {
       p.text(fPlaceholder, box.fLeft, box.fTop + kPadY + fFontSize, fFontSize,
              fTheme.fTextFaint, alpha);
     }
@@ -838,7 +1066,7 @@ public:
         const float top = box.fTop + kPadY + static_cast<float>(i - first) * lineHeight;
         shownLines.push_back({this->lineStartOf(fLines[static_cast<std::size_t>(i)].fStart), top, top + lineHeight});
       }
-      drawBlocksBehind(fBlocks, p, fText, shownLines, box, fTheme, fFontSize, alpha);
+      drawBlocksBehind(fBlocks, p, fDoc.text, shownLines, box, fTheme, fFontSize, alpha);
     }
     for (int i = first; i < static_cast<int>(fLines.size()); ++i) {
       const Line &line = fLines[static_cast<std::size_t>(i)];
@@ -859,8 +1087,8 @@ public:
     // Where the caret is, known while it is off too: a blink repaints it
     // there.
     if (this->focused() && !fLines.empty()) {
-      const std::size_t at = this->lineOf(fCaret);
-      const float x = this->xAt(p, fLines[at], fCaret) - shift;
+      const std::size_t at = this->lineOf(fDoc.caret);
+      const float x = this->xAt(p, fLines[at], fDoc.caret) - shift;
       const float top = box.fTop + kPadY + static_cast<float>(static_cast<int>(at) - first) * lineHeight;
       fCaretRect = skia::SkRect::MakeXYWH(box.fLeft + x, top + 1.0f, 1.2f, fFontSize + 3.0f);
       if (fCaretShown) {
@@ -883,7 +1111,7 @@ private:
 
   // How the paragraph an offset is in looks, as the program's blocks say.
   [[nodiscard]] BlockLook lookAt(std::size_t at) const {
-    return fMasked || fSingle ? BlockLook{} : fBlocks.look(fText, this->lineStartOf(at));
+    return fMasked || fSingle ? BlockLook{} : fBlocks.look(fDoc.text, this->lineStartOf(at));
   }
   // How far a line's text stands in: its paragraph's indent.
   [[nodiscard]] float indentOf(const Line &line) const { return this->lookAt(line.fStart).indent; }
@@ -895,7 +1123,7 @@ private:
   // A line: its text, its atoms' pieces as pills in the accent.
   // Where the line an offset is on starts, after the newline before it.
   [[nodiscard]] std::size_t lineStartOf(std::size_t at) const {
-    const std::size_t before = at == 0 ? std::string::npos : fText.rfind('\n', at - 1);
+    const std::size_t before = at == 0 ? std::string::npos : fDoc.text.rfind('\n', at - 1);
     return before == std::string::npos ? 0 : before + 1;
   }
   template <class P> void drawLine(const P &field, const Line &line, float left, float y, float alpha) const {
@@ -921,7 +1149,7 @@ private:
       }
     };
     if (!fMasked) {
-      for (const Atom &one : fAtoms) {
+      for (const Atom &one : fDoc.atoms) {
         if (one.last <= line.fStart || one.first >= line.fEnd) {
           continue;
         }
@@ -949,7 +1177,7 @@ private:
   // An offset out of any atom it falls inside: to the atom's end it goes
   // towards, or its nearer.
   [[nodiscard]] std::size_t outOfAtoms(std::size_t offset, std::optional<bool> forward = std::nullopt) const {
-    for (const Atom &one : fAtoms) {
+    for (const Atom &one : fDoc.atoms) {
       if (offset > one.first && offset < one.last) {
         const bool after = forward ? *forward : offset - one.first > one.last - offset;
         return after ? one.last : one.first;
@@ -963,8 +1191,8 @@ private:
     // hidden fence each time it left.
     const std::size_t start = this->lineStartOf(offset);
     const BlockLook look = this->lookAt(start);
-    const std::size_t newline = fText.find('\n', start);
-    const std::size_t end = newline == std::string::npos ? fText.size() : newline;
+    const std::size_t newline = fDoc.text.find('\n', start);
+    const std::size_t end = newline == std::string::npos ? fDoc.text.size() : newline;
     const std::size_t marks = std::min(start + look.hidden, end);
     const bool back = forward.has_value() && !*forward;
     if (look.collapsed || !look.caret) {
@@ -981,41 +1209,25 @@ private:
   // An atom unmarked: its text what it reads plain, the caret after it.
   void unmark(std::vector<Atom>::iterator atom) {
     const Atom one = *atom;
-    fAtoms.erase(atom);
-    fAnchor = fCaret = one.first;
+    fDoc.atoms.erase(atom);
+    fDoc.anchor = fDoc.caret = one.first;
     this->eraseText(one.first, one.last);
     const std::string &text = one.unmarked.empty() ? one.plain : one.unmarked;
-    fText.insert(one.first, text);
+    fDoc.text.insert(one.first, text);
     this->shiftAtoms(one.first, static_cast<std::ptrdiff_t>(text.size()));
-    fCaret = fAnchor = one.first + text.size();
+    fDoc.caret = fDoc.anchor = one.first + text.size();
     this->edited();
   }
   // Atoms at or past `from` moved by `by` bytes.
-  void shiftAtoms(std::size_t from, std::ptrdiff_t by) {
-    // Text put in: the spans too. (Text taken out moves them in eraseText.)
-    if (by > 0) {
-      this->spansInserted(from, static_cast<std::size_t>(by));
-    }
-    for (Atom &one : fAtoms) {
-      if (one.first >= from) {
-        one.first = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.first) + by);
-        one.last = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(one.last) + by);
-      }
-    }
-  }
+  void shiftAtoms(std::size_t from, std::ptrdiff_t by) { document::shiftAtoms(fDoc, from, by, this->grows()); }
   // Text taken out: atoms it cuts into gone, those after it moved back.
-  void eraseText(std::size_t from, std::size_t to) {
-    fText.erase(from, to - from);
-    this->spansErased(from, to);
-    std::erase_if(fAtoms, [&](const Atom &one) { return one.first < to && one.last > from; });
-    this->shiftAtoms(to, -static_cast<std::ptrdiff_t>(to - from));
-  }
+  void eraseText(std::size_t from, std::size_t to) { document::eraseText(fDoc, from, to, this->grows()); }
   [[nodiscard]] float heightFor(int lines) const {
     return static_cast<float>(lines) * fFontSize * kLineSpacing + 2.0f * kPadY;
   }
-  [[nodiscard]] std::size_t low() const noexcept { return std::min(fCaret, fAnchor); }
-  [[nodiscard]] std::size_t high() const noexcept { return std::max(fCaret, fAnchor); }
-  [[nodiscard]] std::string selected() const { return fText.substr(this->low(), this->high() - this->low()); }
+  [[nodiscard]] std::size_t low() const noexcept { return fDoc.low(); }
+  [[nodiscard]] std::size_t high() const noexcept { return fDoc.high(); }
+  [[nodiscard]] std::string selected() const { return document::selected(fDoc); }
 
   // What is drawn for the text between two offsets: itself, or a dot for
   // each character.
@@ -1031,18 +1243,41 @@ private:
           at = std::min(to, marks);
           continue;
         }
-        const std::size_t newline = fText.find('\n', at);
+        const std::size_t newline = fDoc.text.find('\n', at);
         const std::size_t stop = newline == std::string::npos ? to : std::min(to, newline + 1);
-        out.append(fText, at, stop - at);
+        out.append(fDoc.text, at, stop - at);
         at = stop;
       }
       return out;
     }
     std::string out;
-    for (std::size_t at = from; at < to; at = next(fText, at)) {
+    for (std::size_t at = from; at < to; at = next(fDoc.text, at)) {
       out += "•";
     }
     return out;
+  }
+  // What is drawn for the text between two offsets of one paragraph whose
+  // block's marks end at `marks`: as shown() says, without asking the block
+  // again. Wrapping measures a paragraph many times over, and a block's look
+  // may be found from the start of the text (a program's code fences): asked
+  // at every measure, a long text pasted -- a log of a thousand lines --
+  // took minutes to lay out, and the program stopped answering.
+  [[nodiscard]] std::string shownWithin(std::size_t from, std::size_t to, std::size_t marks) const {
+    if (fMasked) {
+      return this->shown(from, to);
+    }
+    from = std::max(from, marks);
+    return from < to ? fDoc.text.substr(from, to - from) : std::string();
+  }
+  template <class P> [[nodiscard]] float widthWithin(const P &p, std::size_t from, std::size_t to, std::size_t marks) const {
+    if (fDoc.spans.empty() || fMasked) {
+      return p.measure(this->shownWithin(from, to, marks), fFontSize);
+    }
+    float width = 0.0f;
+    for (const auto &[a, b, look] : this->runsOf(from, to)) {
+      width += this->painterOf(p, look).measure(this->shownWithin(a, b, marks), fFontSize, look.face);
+    }
+    return width;
   }
   template <class P> [[nodiscard]] float xAt(const P &field, const Line &line, std::size_t offset) const {
     const P p = this->painterFor(field, line);
@@ -1051,7 +1286,7 @@ private:
   // How wide the text between two offsets is drawn: run by run, each in its
   // face.
   template <class P> [[nodiscard]] float widthOf(const P &p, std::size_t from, std::size_t to) const {
-    if (fSpans.empty() || fMasked) {
+    if (fDoc.spans.empty() || fMasked) {
       return p.measure(this->shown(from, to), fFontSize);
     }
     float width = 0.0f;
@@ -1065,13 +1300,7 @@ private:
     return look.monospace ? p.monospaced(true) : p;
   }
   // The spans over [from, to), cut to it, by offsets from `from`.
-  [[nodiscard]] std::vector<Span> spansIn(std::size_t from, std::size_t to) const {
-    return std::ranges::to<std::vector<Span>>(std::views::transform(
-        std::views::filter(fSpans, [&](const Span &one) { return one.first < to && one.last > from; }),
-        [&](const Span &one) {
-          return Span{std::max(one.first, from) - from, std::min(one.last, to) - from, one.format};
-        }));
-  }
+  [[nodiscard]] std::vector<Span> spansIn(std::size_t from, std::size_t to) const { return document::spansIn(fDoc, from, to); }
   [[nodiscard]] static std::optional<CopiedSpans<Format>> &Copied() { return copiedSpans<Format>(); }
   // A run: [from, to) all of one look.
   struct Run {
@@ -1084,11 +1313,11 @@ private:
     if (to <= from) {
       return {};
     }
-    if (fSpans.empty() || fMasked) {
+    if (fDoc.spans.empty() || fMasked) {
       return {Run{from, to, {}}};
     }
     std::vector<std::size_t> cuts{from, to};
-    for (const Span &one : fSpans) {
+    for (const Span &one : fDoc.spans) {
       for (const std::size_t at : {one.first, one.last}) {
         if (at > from && at < to) {
           cuts.push_back(at);
@@ -1097,15 +1326,15 @@ private:
     }
     std::ranges::sort(cuts);
     cuts.erase(std::ranges::unique(cuts).begin(), cuts.end());
-    return std::ranges::to<std::vector<Run>>(std::views::transform(std::views::pairwise(cuts), [this](const auto &pair) {
-      const auto &[a, b] = pair;
-      return Run{a, b, this->lookOf(a)};
-    }));
+    return cuts | std::views::pairwise | std::views::transform([this](const auto &pair) {
+             const auto &[a, b] = pair;
+             return Run{a, b, this->lookOf(a)};
+           }) | std::ranges::to<std::vector<Run>>();
   }
   // How the character at an offset looks: all its spans' looks.
   [[nodiscard]] RunLook lookOf(std::size_t at) const {
     RunLook look;
-    for (const Span &one : fSpans) {
+    for (const Span &one : fDoc.spans) {
       if (one.first <= at && at < one.last) {
         look = joined(look, runLookBy(fBlocks, one.format));
       }
@@ -1113,49 +1342,21 @@ private:
     return look;
   }
   // The field as a hook sees it.
-  [[nodiscard]] FieldView<Format> view() const { return {fText, fCaret, fAnchor, fSpans}; }
+  [[nodiscard]] FieldView<Format> view() const { return {fDoc.text, fDoc.caret, fDoc.anchor, fDoc.spans}; }
   // An offset in the text, as it is in plainText(): atoms before it as long
   // as they read; one inside an atom at its start.
-  [[nodiscard]] std::size_t plainOffset(std::size_t at) const {
-    std::size_t out = at;
-    for (const Atom &one : fAtoms) {
-      if (one.last <= at) {
-        out = out + one.plain.size() - (one.last - one.first);
-      } else if (one.first < at) {
-        out -= at - one.first;
-      }
-    }
-    return out;
-  }
+  [[nodiscard]] std::size_t plainOffset(std::size_t at) const { return document::plainOffset(fDoc, at); }
   // Spans moved for text put in at `at`: on past it, or longer where it went
   // into one -- at a span's end too, where the format grows.
-  void spansInserted(std::size_t at, std::size_t size) {
-    for (Span &one : fSpans) {
-      if (one.first >= at) {
-        one.first += size;
-        one.last += size;
-      } else if (one.last > at || (one.last == at && growsBy(fBlocks, one.format))) {
-        one.last += size;
-      }
-    }
-  }
+  void spansInserted(std::size_t at, std::size_t size) { document::spansInserted(fDoc, at, size, this->grows()); }
   // Spans moved for [from, to) taken out: what was in it gone from them, and
   // a span left empty dropped.
-  void spansErased(std::size_t from, std::size_t to) {
-    const auto moved = [&](std::size_t at) { return at <= from ? at : at >= to ? at - (to - from) : from; };
-    for (Span &one : fSpans) {
-      one.first = moved(one.first);
-      one.last = moved(one.last);
-    }
-    std::erase_if(fSpans, [](const Span &one) { return one.first >= one.last; });
-  }
+  void spansErased(std::size_t from, std::size_t to) { document::spansErased(fDoc, from, to); }
   // Spans kept within the text: cut to its end, those left empty dropped.
-  void keepSpansIn() {
-    for (Span &one : fSpans) {
-      one.last = std::min(one.last, fText.size());
-      one.first = std::min(one.first, one.last);
-    }
-    std::erase_if(fSpans, [](const Span &one) { return one.first >= one.last; });
+  void keepSpansIn() { document::keepSpansIn(fDoc); }
+  // Whether text typed at a span's end goes into it, as the blocks say.
+  [[nodiscard]] auto grows() const {
+    return [this](const Format &format) { return growsBy(fBlocks, format); };
   }
   // Where the text goes: its bounds within its padding at the sides, as a
   // field's plate keeps its text off its edges.
@@ -1169,7 +1370,7 @@ private:
     if (!fSingle || fLines.empty()) {
       return 0.0f;
     }
-    const float caret = this->xAt(p, fLines.front(), fCaret);
+    const float caret = this->xAt(p, fLines.front(), fDoc.caret);
     const float room = this->textBox().width() - 4.0f;
     return caret > room ? caret - room : 0.0f;
   }
@@ -1181,12 +1382,7 @@ private:
   // erasing that runs back from where the last erasing began; anything else
   // -- a paste, a cut, a selection replaced, the caret moved -- is a step of
   // its own. Text set by the program is a new start.
-  struct Snapshot {
-    std::string text;
-    std::vector<Atom> atoms;
-    std::vector<Span> spans;
-    std::size_t caret = 0, anchor = 0;
-  };
+  using Snapshot = TextDocument<Format>;
   std::vector<Snapshot> fUndo, fRedo;
   std::optional<std::size_t> fTypingAt, fErasingAt;
   // The input method's composition in the text, while there is one: from, to.
@@ -1194,7 +1390,7 @@ private:
   static constexpr std::size_t kMostSteps = 200;
   void remember(bool runsOn) {
     if (!runsOn) {
-      fUndo.push_back({fText, fAtoms, fSpans, fCaret, fAnchor});
+      fUndo.push_back(fDoc);
       if (fUndo.size() > kMostSteps) {
         fUndo.erase(fUndo.begin());
       }
@@ -1206,11 +1402,8 @@ private:
     fErasingAt.reset();
   }
   void restore(Snapshot to) {
-    fText = std::move(to.text);
-    fAtoms = std::move(to.atoms);
-    fSpans = std::move(to.spans);
-    fCaret = std::min(to.caret, fText.size());
-    fAnchor = std::min(to.anchor, fText.size());
+    fDoc = std::move(to);
+    document::select(fDoc, fDoc.anchor, fDoc.caret);
     this->breakRun();
     this->edited();
   }
@@ -1218,7 +1411,7 @@ private:
     if (fUndo.empty()) {
       return;
     }
-    fRedo.push_back({fText, fAtoms, fSpans, fCaret, fAnchor});
+    fRedo.push_back(fDoc);
     Snapshot back = std::move(fUndo.back());
     fUndo.pop_back();
     this->restore(std::move(back));
@@ -1227,7 +1420,7 @@ private:
     if (fRedo.empty()) {
       return;
     }
-    fUndo.push_back({fText, fAtoms, fSpans, fCaret, fAnchor});
+    fUndo.push_back(fDoc);
     Snapshot forward = std::move(fRedo.back());
     fRedo.pop_back();
     this->restore(std::move(forward));
@@ -1241,17 +1434,13 @@ private:
     // As tdesktop's field (lib_ui input_field.cpp): Space, Enter, Backspace and
     // Delete each an edit block of their own; letters typed in a row one.
     const bool one = !typed.empty() && typed.size() <= 4 && typed != "\n" && typed != " " && !this->hasSelection();
-    this->remember(one && fTypingAt == fCaret);
+    this->remember(one && fTypingAt == fDoc.caret);
     if (this->hasSelection()) {
       this->erase(this->low(), this->high());
     }
     // Typed inside an atom: it is text again.
-    std::erase_if(fAtoms, [&](const Atom &one) { return fCaret > one.first && fCaret < one.last; });
-    fText.insert(fCaret, typed);
-    this->shiftAtoms(fCaret, static_cast<std::ptrdiff_t>(typed.size()));
-    fCaret += typed.size();
-    fAnchor = fCaret;
-    fTypingAt = one ? std::optional<std::size_t>(fCaret) : std::nullopt;
+    document::insert(fDoc, typed, this->grows());
+    fTypingAt = one ? std::optional<std::size_t>(fDoc.caret) : std::nullopt;
     fErasingAt.reset();
     this->edited();
   }
@@ -1259,7 +1448,7 @@ private:
     // Each erasing a step of its own, as tdesktop's Backspace and Delete.
     this->remember(false);
     this->eraseText(from, to);
-    fCaret = fAnchor = from;
+    fDoc.caret = fDoc.anchor = from;
     fErasingAt = from;
     fTypingAt.reset();
     this->edited();
@@ -1268,7 +1457,23 @@ private:
     this->showCaret();
     this->invalidateLayout();
     this->markDamaged();
+    this->told();
   }
+  // An area bound to a part of a model tells it every edit, as a text box
+  // does: its action asked as the press is delivered; one whose program
+  // keeps the document is told it, each edit.
+  void told()
+    requires(requires { OnSubmit::kEveryEdit; })
+  {
+    skiff::scene::pressLater(fState);
+  }
+  void told()
+    requires(requires { OnSubmit::kEveryDocument; })
+  {
+    fTold = DocumentEdited{};
+    skiff::scene::pressLater(fState);
+  }
+  void told() {}
   void showCaret() {
     fCaretSinceMs = fNowMs;
     fCaretShown = this->focused();
@@ -1280,47 +1485,56 @@ private:
     fLines.clear();
     skia::SkFont *font = skiff::paint::defaultFont();
     if (fSingle || font == nullptr || width <= 0.0f) {
-      fLines.push_back({0, fText.size()});
+      fLines.push_back({0, fDoc.text.size()});
       return;
     }
     // A block's lines narrower: in by their indent, its room at the right
     // kept; code measured in the monospace face.
     float room = width;
     bool monospace = false;
+    // Where the paragraph being wrapped has its marks end: its block asked
+    // once for it, not at every measure.
+    std::size_t marks = 0;
     const auto fits = [&](std::size_t from, std::size_t to) {
       const skiff::paint::Painter p(nullptr, *font, monospace);
-      return this->widthOf(p, from, to) <= room;
+      return this->widthWithin(p, from, to, marks) <= room;
     };
     std::size_t start = 0;
     while (true) {
       const BlockLook look = this->lookAt(start);
       // Not laid out: on to the next paragraph, no line made for it.
       if (look.collapsed) {
-        const std::size_t newline = fText.find('\n', start);
+        const std::size_t newline = fDoc.text.find('\n', start);
         if (newline == std::string::npos) {
           if (fLines.empty())
-            fLines.push_back({start, fText.size()});
+            fLines.push_back({start, fDoc.text.size()});
           break;
         }
         start = newline + 1;
         continue;
       }
       monospace = look.monospace;
+      marks = start + look.hidden;
       room = look.indent + look.right > 0.0f ? std::max(width - look.indent - look.right, fFontSize * 2.0f) : width;
-      const std::size_t newline = fText.find('\n', start);
-      const std::size_t stop = newline == std::string::npos ? fText.size() : newline;
+      const std::size_t newline = fDoc.text.find('\n', start);
+      const std::size_t stop = newline == std::string::npos ? fDoc.text.size() : newline;
       std::size_t from = start;
       while (!fits(from, stop)) {
         std::size_t cut = from;
-        for (std::size_t at = from; at < stop; at = next(fText, at)) {
-          if (fText[at] == ' ' && at > from && fits(from, at)) {
+        // The last space that fits: past the first that does not, none
+        // does -- what is wider only grows.
+        for (std::size_t at = from; at < stop; at = next(fDoc.text, at)) {
+          if (fDoc.text[at] == ' ' && at > from) {
+            if (!fits(from, at)) {
+              break;
+            }
             cut = at;
           }
         }
         if (cut == from) {
-          cut = next(fText, from);
-          while (cut < stop && fits(from, next(fText, cut))) {
-            cut = next(fText, cut);
+          cut = next(fDoc.text, from);
+          while (cut < stop && fits(from, next(fDoc.text, cut))) {
+            cut = next(fDoc.text, cut);
           }
           fLines.push_back({from, cut});
           from = cut;
@@ -1352,21 +1566,21 @@ private:
     if (fLines.empty()) {
       return 0;
     }
-    if (fCaret != fShownFor) {
-      const int caret = static_cast<int>(this->lineOf(fCaret));
+    if (fDoc.caret != fShownFor) {
+      const int caret = static_cast<int>(this->lineOf(fDoc.caret));
       fFirst = std::clamp(fFirst, caret - fMaxLines + 1, caret);
-      fShownFor = fCaret;
+      fShownFor = fDoc.caret;
     }
     fFirst = std::clamp(fFirst, 0, std::max(0, static_cast<int>(fLines.size()) - fMaxLines));
     return fFirst;
   }
   [[nodiscard]] std::size_t offsetAt(float x, float y) const {
     if (fLines.empty()) {
-      return fText.size();
+      return fDoc.text.size();
     }
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
-      return fText.size();
+      return fDoc.text.size();
     }
     const skiff::paint::Painter p(nullptr, *font);
     const float lineHeight = fFontSize * kLineSpacing;
@@ -1384,7 +1598,7 @@ private:
         this->lineStartOf(line.fStart) + this->lookAt(line.fStart).hidden));
     std::size_t best = start;
     float bestDistance = std::numeric_limits<float>::max();
-    for (std::size_t at = start;; at = next(fText, at)) {
+    for (std::size_t at = start;; at = next(fDoc.text, at)) {
       const float distance = std::abs(this->xAt(p, line, at) - x);
       if (distance < bestDistance) {
         bestDistance = distance;
@@ -1398,22 +1612,22 @@ private:
   }
   [[nodiscard]] std::size_t lineMoved(int by) const {
     if (fLines.empty()) {
-      return fCaret;
+      return fDoc.caret;
     }
-    const std::size_t at = this->lineOf(fCaret);
+    const std::size_t at = this->lineOf(fDoc.caret);
     const int to = static_cast<int>(at) + by;
     if (to < 0) {
       return 0;
     }
     if (to >= static_cast<int>(fLines.size())) {
-      return fText.size();
+      return fDoc.text.size();
     }
     skia::SkFont *font = skiff::paint::defaultFont();
     if (font == nullptr) {
-      return fCaret;
+      return fDoc.caret;
     }
     const skiff::paint::Painter p(nullptr, *font);
-    return this->offsetIn(p, fLines[static_cast<std::size_t>(to)], this->xAt(p, fLines[at], fCaret));
+    return this->offsetIn(p, fLines[static_cast<std::size_t>(to)], this->xAt(p, fLines[at], fDoc.caret));
   }
 
   [[nodiscard]] static std::size_t previous(std::string_view text, std::size_t at) {
@@ -1465,28 +1679,43 @@ private:
     return at;
   }
 
-  std::string fText;
-  std::vector<Atom> fAtoms;
-  std::vector<Span> fSpans;
+  TextDocument<Format> fDoc;
   std::string fPlaceholder;
   // What was written, sent: where the action answers, said pressed -- its
   // answer asked as the press is delivered, with the text as it is then.
   void submitted()
-    requires skiff::scene::Answering<OnSubmit>
+    requires(skiff::scene::Answering<OnSubmit> && requires { OnSubmit::kEveryDocument; })
+  {
+    fTold = DocumentSubmitted{};
+    skiff::scene::pressLater(fState);
+  }
+  void submitted()
+    requires(skiff::scene::Answering<OnSubmit> && !requires { OnSubmit::kEveryDocument; })
   {
     skiff::scene::pressLater(fState);
   }
-  void submitted() { std::invoke(fOnSubmit, std::string_view(this->plainText())); }
+  void submitted()
+    requires(!skiff::scene::Answering<OnSubmit>)
+  {
+    std::invoke(fOnSubmit, std::string_view(this->plainText()));
+  }
 
 public:
   auto onPress()
-    requires skiff::scene::Answering<OnSubmit>
+    requires(skiff::scene::Answering<OnSubmit> && requires { OnSubmit::kEveryDocument; })
+  {
+    return std::visit([&](auto why) { return std::invoke(fOnSubmit, why, std::as_const(fDoc)); }, fTold);
+  }
+  auto onPress()
+    requires(skiff::scene::Answering<OnSubmit> && !requires { OnSubmit::kEveryDocument; })
   {
     return std::invoke(fOnSubmit, std::string_view(this->plainText()));
   }
 
 private:
   [[no_unique_address]] OnSubmit fOnSubmit;
+  // What a document-bound field told last: an edit, or Enter.
+  std::variant<DocumentEdited, DocumentSubmitted> fTold;
 
 public:
 
@@ -1505,13 +1734,20 @@ private:
   bool fSingle = false;
   bool fMasked = false;
   bool fDragging = false;
+  // A finger down on it: where, the first line shown then, and whether it
+  // has moved far enough to be a scroll rather than a tap.
+  struct TouchDrag {
+    skia::SkPoint from;
+    int first = 0;
+    bool scrolling = false;
+  };
+  std::optional<TouchDrag> fTouch;
+  static constexpr float kTouchSlop = 8.0f;
   std::vector<Line> fLines;
-  std::size_t fCaret = 0;
   // What firstShown() keeps: the first line in view, and the caret it was
   // for -- kept as the view is drawn, so mutable.
   mutable int fFirst = 0;
   mutable std::size_t fShownFor = 0;
-  std::size_t fAnchor = 0;
   bool fCaretShown = false;
   // Where the caret was last drawn: what a blink repaints.
   skia::SkRect fCaretRect = skia::SkRect::MakeEmpty();

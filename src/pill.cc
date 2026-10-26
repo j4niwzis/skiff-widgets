@@ -37,6 +37,11 @@ public:
                   .cornerRadius = look.height * 0.5f,
                   .background = look.plate});
     parts.label.apply({.alignSelf = skiff::scene::align::kMiddle});
+    // One line, as tall as the pill: cut with an ellipsis where the room is
+    // narrower than it. Wrapped, it came out two lines tall in a pill of one
+    // (a narrow window's "Select a chat"), and stuck out of it.
+    parts.label.setWrapped(false);
+    parts.label.setElided(true);
   }
 
   void setLabel(std::string label) {

@@ -524,9 +524,7 @@ struct ChoiceMenu : skiff::compose::Stacked {
     parts.head.apply({.fillX = true, .height = 36.0f});
     parts.head.fLabelWidth = label.empty() ? 0.0f : std::min(180.0f, static_cast<float>(label.size()) * 7.5f + 12.0f);
     const DropdownLook look{.fTheme = theme, .fRowHeight = 32.0f, .fFontSize = 14.0f};
-    parts.options = std::ranges::to<std::vector>(std::views::transform(names, [&](const std::string& name) {
-      return DropdownRow(name, look);
-    }));
+    parts.options = names | std::views::transform([&](const std::string& name) { return DropdownRow(name, look); }) | std::ranges::to<std::vector>();
     read(selected);
     show_options(false);
   }
