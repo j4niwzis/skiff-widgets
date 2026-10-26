@@ -707,6 +707,16 @@ public:
       reply.handle();
       return;
     }
+    // By a finger: nothing put yet -- a drag scrolls the lines, as a
+    // phone's fields do, and a tap puts the caret where it is let go.
+    // Selected as a mouse selects, a long text could not be read through:
+    // every drag selected, and stopped nowhere it was meant to (a tester).
+    // Selecting is the long press's (its menu).
+    if (skiff::scene::hostWork().byTouch) {
+      fTouch = TouchDrag{.from = skia::SkPoint{at.x, at.y}, .first = this->firstShown()};
+      reply.capturePointer();
+      return;
+    }
     this->breakRun();  // the caret put elsewhere: what is typed next is a step of its own
     fDoc.caret = this->outOfAtoms(this->offsetAt(at.x, at.y));
     fDoc.anchor = fDoc.caret;
@@ -716,6 +726,18 @@ public:
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::move &at,
                  skiff::scene::PointerReply &reply) {
+    if (fTouch) {
+      const float dy = at.y - fTouch->from.fY;
+      fTouch->scrolling = fTouch->scrolling || std::abs(dy) > kTouchSlop;
+      if (fTouch->scrolling) {
+        const int before = this->firstShown();
+        fFirst = fTouch->first - static_cast<int>(std::lround(dy / (fFontSize * kLineSpacing)));
+        if (this->firstShown() != before)
+          this->markDamaged();
+        reply.handle();
+      }
+      return;
+    }
     if (!fDragging) {
       return;
     }
@@ -723,13 +745,21 @@ public:
     this->showCaret();
     reply.handle();
   }
-  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &,
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &at,
                  skiff::scene::PointerReply &reply) {
+    // A finger let go where it went down: the caret there.
+    if (const auto touch = std::exchange(fTouch, std::nullopt); touch && !touch->scrolling) {
+      this->breakRun();
+      fDoc.caret = this->outOfAtoms(this->offsetAt(at.x, at.y));
+      fDoc.anchor = fDoc.caret;
+      this->showCaret();
+    }
     fDragging = false;
     reply.releasePointer();
   }
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
                  skiff::scene::PointerReply &reply) {
+    fTouch.reset();
     fDragging = false;
     reply.releasePointer();
   }
@@ -1687,6 +1717,15 @@ private:
   bool fSingle = false;
   bool fMasked = false;
   bool fDragging = false;
+  // A finger down on it: where, the first line shown then, and whether it
+  // has moved far enough to be a scroll rather than a tap.
+  struct TouchDrag {
+    skia::SkPoint from;
+    int first = 0;
+    bool scrolling = false;
+  };
+  std::optional<TouchDrag> fTouch;
+  static constexpr float kTouchSlop = 8.0f;
   std::vector<Line> fLines;
   // What firstShown() keeps: the first line in view, and the caret it was
   // for -- kept as the view is drawn, so mutable.
