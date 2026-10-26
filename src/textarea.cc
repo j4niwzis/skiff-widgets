@@ -859,6 +859,16 @@ public:
     fDoc.caret = fDoc.anchor = from;
     this->edited();
   }
+  // To an engine that edits fields itself (skiff.mirror): a field of one
+  // line or many, its text, and its edits given back as a block's are.
+  [[nodiscard]] skiff::scene::Look look() const {
+    return skiff::scene::look::field{.text = fDoc.text, .placeholder = fPlaceholder, .multiline = !fSingle, .masked = fMasked,
+                                     .size = fFontSize, .colour = fTheme.fText};
+  }
+  [[nodiscard]] std::string_view fieldText() const noexcept { return fDoc.text; }
+  void replaceRange(std::size_t from, std::size_t to, std::string_view with) {
+    this->applyEdit(TextEdit{.from = from, .to = to, .with = std::string(with), .caret = from + with.size()});
+  }
   // A block's edit put in: a step of its own to undo.
   void applyEdit(const TextEdit &edit) {
     this->remember(false);

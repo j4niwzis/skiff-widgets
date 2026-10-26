@@ -78,6 +78,20 @@ public:
     fAll = false;
     this->markDamaged();
   }
+  // To an engine that edits fields itself (skiff.mirror): a field of one
+  // line, its text, and its edits given back as typing's are.
+  [[nodiscard]] skiff::scene::Look look() const {
+    return skiff::scene::look::field{.text = fText, .placeholder = fPlaceholder, .multiline = false, .masked = fMasked,
+                                     .size = fTheme.fFontSize, .colour = fTheme.fText};
+  }
+  [[nodiscard]] std::string_view fieldText() const noexcept { return fText; }
+  void replaceRange(std::size_t from, std::size_t to, std::string_view with) {
+    fAll = false;
+    this->replaceText(from, to, singleLine(with));
+    fCaret = from + singleLine(with).size();
+    this->changed();
+    this->markDamaged();
+  }
   [[nodiscard]] const std::string &text() const noexcept { return fText; }
   // Copied inline images keep their source while this single-line field
   // displays their plain label. Offsets are in text(), not placeholders.
