@@ -863,9 +863,16 @@ public:
   // line or many, its text, and its edits given back as a block's are.
   [[nodiscard]] skiff::scene::Look look() const {
     return skiff::scene::look::field{.text = fDoc.text, .placeholder = fPlaceholder, .multiline = !fSingle, .masked = fMasked,
-                                     .size = fFontSize, .colour = fTheme.fText};
+                                     .size = fFontSize, .colour = fTheme.fText, .selection = std::pair{fDoc.anchor, fDoc.caret}};
   }
   [[nodiscard]] std::string_view fieldText() const noexcept { return fDoc.text; }
+  void selectField(std::size_t anchor, std::size_t caret) {
+    if (fDoc.anchor == anchor && fDoc.caret == caret) return;
+    document::select(fDoc, anchor, caret);
+    this->breakRun();
+    this->showCaret();
+    this->markDamaged();
+  }
   void replaceRange(std::size_t from, std::size_t to, std::string_view with) {
     this->applyEdit(TextEdit{.from = from, .to = to, .with = std::string(with), .caret = from + with.size()});
   }
