@@ -17,6 +17,7 @@ export import skiff.widgets.theme;
 export namespace skiff::widgets::web {
 
 using namespace skiff::web;
+namespace css = skiff::web::css;
 using skiff::web::Node;
 
 // A colour brought towards white by a share, as skiff.paint lightens one.
@@ -153,8 +154,10 @@ public:
     to.value(std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
     // The track filled up to the knob, as the scene draws it: the gradient is
     // the element's own, where the browser's track cannot be told the value.
-    const std::string at = number(fFraction * 100.0f) + "%";
-    to.style("--skiff-track", "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
+    const css::percent at{fFraction * 100.0f};
+    to.style(css::range_track{css::directed_gradient{css::to_right{}, {
+        {css::argb{fTheme.fAccent}, {css::zero{}, at}},
+        {css::argb{fTheme.fSurface}, {at, css::percent{100}}}}}});
   }
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -499,7 +502,7 @@ public:
     to.listen("input");
     to.attr("class", fSearch ? "skiff-textbox skiff-search" : "skiff-textbox");
     to.attr("type", fMasked ? "password" : "text");
-    if (fTrailingInset > 0.0f) to.style("padding-right", px(fTrailingInset));
+    if (fTrailingInset > 0.0f) to.style(css::padding_right{css::pixels{fTrailingInset}});
     to.value(fText);
   }
   void setTheme(Theme value) {
@@ -656,8 +659,10 @@ public:
     to.listen("input");
     to.listen("change");
     to.value(std::to_string(static_cast<int>(std::lround(fFraction * kSteps))));
-    const std::string at = number(fFraction * 100.0f) + "%";
-    to.style("--skiff-track", "linear-gradient(to right," + rgba(fTheme.fAccent) + " 0 " + at + "," + rgba(fTheme.fSurface) + " " + at + " 100%)");
+    const css::percent at{fFraction * 100.0f};
+    to.style(css::range_track{css::directed_gradient{css::to_right{}, {
+        {css::argb{fTheme.fAccent}, {css::zero{}, at}},
+        {css::argb{fTheme.fSurface}, {at, css::percent{100}}}}}});
   }
   void setTheme(Theme value) {
     fTheme = std::move(value);
@@ -712,9 +717,9 @@ public:
   void markup(Markup &to) {
     to.attr("class", "skiff-pill");
     to.text(fLabel);
-    to.style("color", rgba(fLook.text));
-    to.style("font-size", px(fLook.size));
-    to.style("font-weight", fLook.bold ? "600" : "400");
+    to.style(css::color{css::argb{fLook.text}});
+    to.style(css::font_size{css::pixels{fLook.size}});
+    to.style(css::font_weight{fLook.bold ? 600 : 400});
   }
   void setLabel(std::string label) {
     if (label != fLabel) {
@@ -758,9 +763,9 @@ public:
     const bool pictured = parts.picture.picture() != nullptr;
     parts.initials.setVisible(!pictured);
     parts.picture.setVisible(pictured);
-    parts.initials.setStyle("font-size", px(fSize * 0.4f));
-    parts.initials.setStyle("font-weight", "600");
-    parts.initials.setStyle("color", "rgba(255,255,255,1)");
+    parts.initials.setStyle(css::font_size{css::pixels{fSize * 0.4f}});
+    parts.initials.setStyle(css::font_weight{600});
+    parts.initials.setStyle(css::color{css::argb{0xffffffff}});
   }
   void show(std::string initials, Source picture, scene::Gradient colours) {
     parts.initials.setText(std::move(initials));
@@ -792,7 +797,7 @@ public:
   void markup(Markup &to) {
     to.attr("class", "skiff-loader");
     if constexpr (!std::same_as<OnPress, scene::NoAction>) to.listen("click");
-    if (fProgress) to.style("--skiff-done", number(std::clamp(*fProgress, 0.0f, 1.0f) * 100.0f) + "%");
+    if (fProgress) to.style(css::progress{css::percent{std::clamp(*fProgress, 0.0f, 1.0f) * 100.0f}});
     if (fStopped) to.attr("data-stopped", "");
   }
   void setProgress(std::optional<float> done) {
@@ -943,12 +948,12 @@ public:
     to.inner("div", kScrim, [&](Markup &scrim) {
       scrim.attr("class", "skiff-scrim");
       scrim.listen("click");
-      if (!fOpen) scrim.style("display", "none");
+      if (!fOpen) scrim.style(css::display{css::none{}});
     });
     fPanel.addClass("skiff-sheet");
-    fPanel.setStyle("transform", fOpen ? "translateX(0)" : "translateX(-100%)");
-    fPanel.setStyle("background-color", rgba(fSheet));
-    fPanel.setStyle("z-index", "1");
+    fPanel.setStyle(css::transform{css::transforms{{css::translate_x{fOpen ? css::Length{css::zero{}} : css::Length{css::percent{-100}}}}}});
+    fPanel.setStyle(css::background_color{css::argb{fSheet}});
+    fPanel.setStyle(css::z_index{1});
   }
   // The scrim clicked: the drawer pushed back, or the program told.
   bool onDom(Part where, std::string_view event, std::string_view) {
@@ -1052,11 +1057,13 @@ public:
   void setBlurs(std::vector<float> amounts) { setBlur(amounts.empty() ? 0.0f : amounts.front()); }
   void markup(Markup &to) {
     to.attr("class", "skiff-wallpaper");
-    if (fGradient) to.style("background-image", "linear-gradient(" + rgba(fGradient->top) + "," + rgba(fGradient->bottom) + ")");
-    if (fColour) to.style("background-color", rgba(*fColour));
-    to.style("opacity", number(fOpacity));
-    to.style("filter", fBlur > 0.0f ? "blur(" + px(fBlur) + ")" : std::string());
-    to.style("box-shadow", fTint ? "inset 0 0 0 100vmax " + rgba(*fTint) : std::string());
+    if (fGradient) to.style(css::background_image{css::linear_gradient{css::argb{fGradient->top}, css::argb{fGradient->bottom}}});
+    if (fColour) to.style(css::background_color{css::argb{*fColour}});
+    to.style(css::opacity{fOpacity});
+    if (fBlur > 0.0f) to.style(css::filter{css::blur{css::pixels{fBlur}}});
+    else to.eraseStyle<css::filter>();
+    if (fTint) to.style(css::box_shadow{css::shadow{css::zero{}, css::zero{}, css::zero{}, css::argb{*fTint}, css::vmax{100}, true}});
+    else to.eraseStyle<css::box_shadow>();
   }
 
 private:
