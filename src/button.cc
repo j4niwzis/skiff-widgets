@@ -96,8 +96,12 @@ public:
     return out;
   }
 
-  [[nodiscard]] bool onClick(float x, float y) {
-    if (!fEnabled || !fState.fBounds.contains(x, y)) {
+  // Clicked: where the router found it at the press, and its release on it
+  // (scene.cc checks that). Checked again here against its laid-out box,
+  // it missed every click on a page, where the browser places the element
+  // and the point it gives is the element's, not the scene's box.
+  [[nodiscard]] bool onClick(float, float) {
+    if (!fEnabled) {
       return false;
     }
     this->act();
@@ -131,12 +135,15 @@ public:
       return;
     }
     skia::SkFont *font = skiff::paint::defaultFont();
-    if (font == nullptr) {
-      return;
-    }
-    const skiff::paint::Painter p(nullptr, *font);
     fAutoWidth = true;
-    fState.fWidth = p.measure(fLabel, fTheme.fFontSize) + 2.0f * fTheme.fPaddingX + 16.0f;
+    // No face to measure with -- on a page, where the browser draws the
+    // words: an estimate of its label's width, not none. Left at none, the
+    // button was nothing wide in the scene, a click on it found it nowhere,
+    // and a page's buttons (Add account, a room's notifications) did
+    // nothing at all.
+    const float label = font != nullptr ? skiff::paint::Painter(nullptr, *font).measure(fLabel, fTheme.fFontSize)
+                                        : static_cast<float>(fLabel.size()) * fTheme.fFontSize * 0.6f;
+    fState.fWidth = label + 2.0f * fTheme.fPaddingX + 16.0f;
   }
 
   template <class P> void drawSelf(P &p, float alpha) {
