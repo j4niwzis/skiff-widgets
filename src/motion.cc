@@ -426,7 +426,14 @@ public:
     fSheet.apply({.width = fPanelWidth, .height = box.height()});
     fSheet.fState.arrange(0.0f, 0.0f);
     skiff::scene::layout(fSheet, panel);
-    skiff::compose::state_of(fContent).arrange(0.0f, 0.0f);
+    // The content as wide as the panel in its own spec too, not only where
+    // it is laid: on a page, the browser lays it by its spec -- which filled
+    // the drawer, the whole window, and lit a row under the pointer across
+    // it, past the sheet's edge.
+    auto &content = skiff::compose::state_of(fContent);
+    if (content.fWidth != fPanelWidth || content.fRelativeSizeAxes.template has<skiff::scene::axis::x>())
+      content.apply({.width = fPanelWidth, .relativeSize = skiff::scene::axes::kY});
+    content.arrange(0.0f, 0.0f);
     skiff::scene::layout(fContent, panel);
     this->place();
   }
@@ -743,18 +750,32 @@ public:
         fPlace);
     const float most = top ? box.height() - 2.0f * *top : box.height() * 0.9f;
     float height = std::min(fHeight, most);
+    // Its anchor, the same while it is measured as where it is laid: placed
+    // otherwise in between, it was moved twice a layout, and laid out again
+    // at every frame.
+    const skiff::scene::Anchor at = top ? skiff::scene::anchor::kTopCentre : skiff::scene::anchor::kCentre;
     if (fFitsContent) {
-      skiff::compose::state_of(*fContent).arrange(0.0f, 0.0f);
+      skiff::compose::state_of(*fContent).arrange(0.0f, top.value_or(0.0f), at, at);
       skiff::scene::layout(*fContent, skia::SkRect::MakeXYWH(box.fLeft, box.fTop, width, most));
       height = std::min(skiff::compose::state_of(*fContent).fBounds.height(), most);
     }
-    const skia::SkRect area = skia::SkRect::MakeXYWH(
-        box.centerX() - width * 0.5f, top ? box.fTop + *top : box.centerY() - height * 0.5f, width, height);
+    // Where it stands said in the sheet's and the content's own specs --
+    // their size, and an anchor in the window with an offset down from it --
+    // and each laid in the whole window by them: the same box as before
+    // here, and on a page, where the browser lays them by their specs, the
+    // same box there too. Laid by hand in their box, with specs that said
+    // nothing of it (the content's said "fill"), a dialog stood at the
+    // page's top left with its content over the whole window.
     fSheet.apply({.width = width, .height = height});
-    fSheet.fState.arrange(0.0f, 0.0f);
-    skiff::scene::layout(fSheet, area);
-    skiff::compose::state_of(*fContent).arrange(0.0f, 0.0f);
-    skiff::scene::layout(*fContent, area);
+    fSheet.fState.arrange(0.0f, top.value_or(0.0f), at, at);
+    skiff::scene::layout(fSheet, box);
+    auto &content = skiff::compose::state_of(*fContent);
+    if (fFitsContent)
+      content.apply({.width = width, .relativeSize = skiff::scene::axes::kNone});
+    else
+      content.apply({.width = width, .height = height, .relativeSize = skiff::scene::axes::kNone});
+    content.arrange(0.0f, top.value_or(0.0f), at, at);
+    skiff::scene::layout(*fContent, box);
   }
 
   using Node::onPointer;
