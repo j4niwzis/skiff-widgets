@@ -1055,7 +1055,9 @@ public:
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::semantic_role::text_box{};
+    // Lines, Enter a new one; a masked one a secret all the same.
+    out.fRole = skiff::scene::semantic_role::text_box{
+        .kind = fMasked ? skiff::scene::TextKind{skiff::scene::text_kind::secret{}} : skiff::scene::TextKind{skiff::scene::text_kind::lines{}}};
     out.fLabel = fPlaceholder;
     if (!fMasked) {
       out.fValue = fDoc.text;

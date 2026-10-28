@@ -276,7 +276,9 @@ public:
 
   [[nodiscard]] skiff::scene::Semantics semantics() const {
     skiff::scene::Semantics out;
-    out.fRole = skiff::scene::semantic_role::text_box{};
+    // A masked one a secret: its keyboard neither suggests nor learns it.
+    out.fRole = skiff::scene::semantic_role::text_box{
+        .kind = fMasked ? skiff::scene::TextKind{skiff::scene::text_kind::secret{}} : skiff::scene::TextKind{skiff::scene::text_kind::plain{}}};
     out.fLabel = fPlaceholder;
     if (!fMasked) {
       out.fValue = fText;
