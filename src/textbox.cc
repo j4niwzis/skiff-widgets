@@ -135,13 +135,32 @@ public:
   // A right press -- a long press, on a phone: the text menu asked of the
   // host. Any other press is the click's.
   using Node::onPointer;
+  // A press puts the caret where it is -- by a finger, where it is let go
+  // without having moved (a drag is a scroll's). Nothing put it before: the
+  // caret stayed where typing left it, wherever the field was pressed (a
+  // tester's: the cursor could not be moved in a field).
   void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::down &at,
                  skiff::scene::PointerReply &reply) {
-    if (at.button != 3) {
+    if (at.button == 3) {
+      skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = fAll, .masked = fMasked, .text = !fText.empty()});
+      reply.handle();
       return;
     }
-    skiff::scene::textMenusAsked().push_back(skiff::scene::text_menu::of_field{.selection = fAll, .masked = fMasked, .text = !fText.empty()});
-    reply.handle();
+    if (skiff::scene::hostWork().byTouch) {
+      fTapAt = skia::SkPoint{at.x, at.y};
+      return;
+    }
+    this->putCaret(at.x);
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::up &at,
+                 skiff::scene::PointerReply &) {
+    const auto from = std::exchange(fTapAt, std::nullopt);
+    if (from && std::abs(at.x - from->fX) < kTapSlop && std::abs(at.y - from->fY) < kTapSlop)
+      this->putCaret(at.x);
+  }
+  void onPointer(skiff::scene::phase::target, const skiff::scene::pointer::cancel &,
+                 skiff::scene::PointerReply &) {
+    fTapAt.reset();
   }
 
   using Node::onText;
@@ -354,6 +373,35 @@ public:
   OnChanged &onChanged() noexcept { return fOnChanged; }
 
 private:
+  static constexpr float kTapSlop = 8.0f;
+  std::optional<skia::SkPoint> fTapAt;
+  void putCaret(float x) {
+    fAll = false;
+    fComposition.clear();
+    fCaret = this->offsetAt(x);
+    this->markDamaged();
+  }
+  // Where a point across the field is in its text: the nearest place
+  // between characters, as drawSelf draws them.
+  [[nodiscard]] std::size_t offsetAt(float x) const {
+    skia::SkFont *font = skiff::paint::defaultFont();
+    if (font == nullptr)
+      return fText.size();
+    const skiff::paint::Painter p(nullptr, *font);
+    const float textLeft = fState.fBounds.fLeft + fTheme.fPaddingX + (fSearchIcon ? 20.0f : 0.0f);
+    std::size_t best = 0;
+    float bestDistance = std::numeric_limits<float>::max();
+    for (std::size_t at = 0;; at = nextCodepoint(fText, at)) {
+      const float distance = std::abs(textLeft + p.measure(shownAs(fText.substr(0, at)), fTheme.fFontSize) - x);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = at;
+      }
+      if (at >= fText.size())
+        break;
+    }
+    return best;
+  }
   static std::string singleLine(std::string_view text) {
     std::string out(text);
     std::ranges::replace(out, '\n', ' ');
