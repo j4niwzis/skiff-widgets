@@ -686,6 +686,8 @@ public:
   }
   void update(double nowMs) {
     fNowMs = nowMs;
+    if (this->focused())
+      this->followKeyboard();
     const bool shown =
         this->focused() && std::fmod(nowMs - fCaretSinceMs, 1060.0) < 530.0;
     if (shown != fCaretShown) {
@@ -875,6 +877,30 @@ public:
   }
   void replaceRange(std::size_t from, std::size_t to, std::string_view with) {
     this->applyEdit(TextEdit{.from = from, .to = to, .with = std::string(with), .caret = from + with.size()});
+  }
+  // With the focus: what the keyboard made taken as it is -- the least edit
+  // that makes it, its selection where it said -- and what it is said to
+  // the host, where it changed (a keyboard told only what was typed at the
+  // end moved its own caret where this one was not: a tester's).
+  void followKeyboard() {
+    auto &work = skiff::scene::hostWork();
+    bool byKeyboard = false;
+    if (auto made = std::exchange(work.edited, std::nullopt)) {
+      const std::string &was = fDoc.text;
+      std::size_t first = 0;
+      while (first < was.size() && first < made->text.size() && was[first] == made->text[first])
+        ++first;
+      std::size_t last = 0;
+      while (last < was.size() - first && last < made->text.size() - first &&
+             was[was.size() - 1 - last] == made->text[made->text.size() - 1 - last])
+        ++last;
+      if (was != made->text)
+        this->replaceRange(first, was.size() - last, std::string_view(made->text).substr(first, made->text.size() - first - last));
+      this->selectField(std::min(made->anchor, fDoc.text.size()), std::min(made->caret, fDoc.text.size()));
+      byKeyboard = true;
+    }
+    if (!work.editing || work.editing->text != fDoc.text || work.editing->anchor != fDoc.anchor || work.editing->caret != fDoc.caret)
+      work.editing = skiff::scene::Editing{.text = fDoc.text, .anchor = fDoc.anchor, .caret = fDoc.caret, .byKeyboard = byKeyboard};
   }
   // A block's edit put in: a step of its own to undo.
   void applyEdit(const TextEdit &edit) {

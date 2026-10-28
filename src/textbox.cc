@@ -127,7 +127,11 @@ public:
   [[nodiscard]] bool settling() const { return this->focused() || fCaretShown; }
   // Ticked while it has the caret.
   [[nodiscard]] bool wantsTick() const { return this->focused(); }
-  void update(double nowMs) { this->tickCaret(nowMs, this->focused()); }
+  void update(double nowMs) {
+    this->tickCaret(nowMs, this->focused());
+    if (this->focused())
+      this->followKeyboard();
+  }
 
   [[nodiscard]] bool onClick(float x, float y) {
     return fState.fBounds.contains(x, y);
@@ -373,6 +377,33 @@ public:
   OnChanged &onChanged() noexcept { return fOnChanged; }
 
 private:
+  // With the focus: what the keyboard made taken as it is (the least edit
+  // that makes it, the caret where it said), and what it is said to the
+  // host, where it changed -- by the keyboard's hand or not.
+  void followKeyboard() {
+    auto &work = skiff::scene::hostWork();
+    bool byKeyboard = false;
+    if (auto made = std::exchange(work.edited, std::nullopt)) {
+      const std::string now = singleLine(made->text);
+      std::size_t first = 0;
+      while (first < fText.size() && first < now.size() && fText[first] == now[first])
+        ++first;
+      std::size_t last = 0;
+      while (last < fText.size() - first && last < now.size() - first &&
+             fText[fText.size() - 1 - last] == now[now.size() - 1 - last])
+        ++last;
+      if (fText != now)
+        this->replaceRange(first, fText.size() - last, std::string_view(now).substr(first, now.size() - first - last));
+      fCaret = std::min(made->caret, fText.size());
+      fAll = false;
+      fComposition.clear();
+      this->markDamaged();
+      byKeyboard = true;
+    }
+    const std::size_t anchor = fAll ? 0 : fCaret, caret = fAll ? fText.size() : fCaret;
+    if (!work.editing || work.editing->text != fText || work.editing->anchor != anchor || work.editing->caret != caret)
+      work.editing = skiff::scene::Editing{.text = fText, .anchor = anchor, .caret = caret, .byKeyboard = byKeyboard};
+  }
   static constexpr float kTapSlop = 8.0f;
   std::optional<skia::SkPoint> fTapAt;
   void putCaret(float x) {
