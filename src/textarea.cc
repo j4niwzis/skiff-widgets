@@ -561,9 +561,23 @@ public:
   // another than the field's own -- the program put a link in, or another
   // draft -- that, a step of undo; what the field itself told comes back as
   // it is, and nothing moves.
+  //
+  // What the field told comes back later than it was told: with a keyboard
+  // typing fast, an edit or two later. Taken then, it put the field back
+  // where it was -- and the input method, told the field, dropped what it
+  // had typed since: the last letters of a word went (a tester's). The
+  // field's own documents coming back are known (fEchoes) and left; what
+  // the program made itself is taken.
   void read(const TextDocument<Format> &now) {
-    if (now == fDoc)
+    if (now == fDoc) {
+      fEchoes.clear();
       return;
+    }
+    if (const auto echo = std::ranges::find(fEchoes, now); echo != fEchoes.end()) {
+      fEchoes.erase(fEchoes.begin(), std::next(echo));
+      return;
+    }
+    fEchoes.clear();
     this->remember(false);
     this->breakRun();
     fComposed.reset();
@@ -1749,6 +1763,11 @@ public:
   auto onPress()
     requires(skiff::scene::Answering<OnSubmit> && requires { OnSubmit::kEveryDocument; })
   {
+    // What is told, kept until it comes back: the program's copy of it,
+    // read a frame or more later, is then known for the field's own.
+    constexpr std::size_t kEchoesKept = 32;
+    if (fEchoes.size() >= kEchoesKept) fEchoes.erase(fEchoes.begin());
+    fEchoes.push_back(fDoc);
     return std::visit([&](auto why) { return std::invoke(fOnSubmit, why, std::as_const(fDoc)); }, fTold);
   }
   auto onPress()
@@ -1761,6 +1780,8 @@ private:
   [[no_unique_address]] OnSubmit fOnSubmit;
   // What a document-bound field told last: an edit, or Enter.
   std::variant<DocumentEdited, DocumentSubmitted> fTold;
+  // The documents told and not yet come back, oldest first.
+  std::vector<TextDocument<Format>> fEchoes;
 
 public:
 
