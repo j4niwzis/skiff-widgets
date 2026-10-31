@@ -33,6 +33,14 @@ export import skiff.widgets.web;
 import std;
 
 export namespace skiff::ui {
+#ifdef SKIFF_UI_ON_SCENE
+// A stack on the scene, as made of what is mounted: compose's Box of them,
+// made at once -- the tree is mounted here, not described again.
+template <class... Parts> auto stackOn(bool across, skiff::compose::Look look, Parts... parts) {
+  look.fHorizontal = across;
+  return skiff::compose::erased(skiff::compose::Box(std::move(look), skiff::compose::as_part(std::move(parts))...));
+}
+#endif
 
 namespace scene = skiff::scene;
 namespace model = skiff::model;
@@ -157,9 +165,9 @@ template <bool Across, class... P> struct Stack : detail::Applied {
           } else {
 #ifdef SKIFF_UI_ON_SCENE
             if constexpr (Across)
-              return skiff::compose::row(detail::lookOn(tag, fLook), mount(tag, std::move(each))...);
+              return stackOn(true, detail::lookOn(tag, fLook), mount(tag, std::move(each))...);
             else
-              return skiff::compose::column(detail::lookOn(tag, fLook), mount(tag, std::move(each))...);
+              return stackOn(false, detail::lookOn(tag, fLook), mount(tag, std::move(each))...);
 #endif
           }
         },
