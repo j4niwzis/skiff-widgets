@@ -220,15 +220,13 @@ template <class T> struct ChoiceRowField : skiff::compose::Stacked {
                                       .hoverBackground = theme.fSurfaceHover,
                                       .focusBackground = theme.fSurfaceHover})),
         fTheme(std::move(theme)), fChoice(std::move(choice)),
-        parts{.label = skiff::compose::styled(
-                  {.grow = skiff::scene::axes::kX,
-                   .alignSelf = skiff::scene::align::kMiddle},
-                  skiff::nodes::Text(std::move(label), 15.0f, fTheme.fText)),
-              .mark = skiff::compose::styled(
-                  {.width = 20.0f,
-                   .height = 20.0f,
-                   .alignSelf = skiff::scene::align::kMiddle},
-                  skiff::nodes::Icon(shape(false), fTheme.fTextDim))} {}
+        parts{.label = skiff::nodes::Text(std::move(label), 15.0f, fTheme.fText),
+              .mark = skiff::nodes::Icon(shape(false), fTheme.fTextDim)} {
+    // Its own parts, nodes it holds: their specs applied here, as Avatar's
+    // are -- styled() makes a builder, for a view's parts.
+    parts.label.apply({.grow = skiff::scene::axes::kX, .alignSelf = skiff::scene::align::kMiddle});
+    parts.mark.apply({.width = 20.0f, .height = 20.0f, .alignSelf = skiff::scene::align::kMiddle});
+  }
   static skiff::nodes::IconShape shape(bool chosen) {
     skiff::nodes::IconShape result{
         {{skiff::nodes::mark::circle{0.0f, 0.0f, 8.0f}, 2.0f}}};

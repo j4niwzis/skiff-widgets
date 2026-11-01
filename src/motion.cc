@@ -27,8 +27,14 @@ public:
 // hook); a change in it is followed on the next frame.
 template <class Child>
 class Collapsible : public skiff::scene::Node {
+  static_assert(!requires { typename Child::is_builder; },
+                "a builder folds in collapsible(child): built under the rules the view is built under");
+
 public:
   using BindingChildren = std::tuple<Child>;
+  // Found as itself through whatever is made over it -- a projection, a
+  // binding, both its subclasses (scene::MarkOf).
+  using MarkedAs = Collapsible;
   template <class... Args>
   explicit Collapsible(Args &&...args) : fChild(std::forward<Args>(args)...) {
     fState.apply({.fillX = true, .masking = true});
@@ -108,6 +114,14 @@ private:
 };
 
 template <class Child> Collapsible(Child) -> Collapsible<Child>;
+
+// A Collapsible over a node or a builder, said as a view's part: a builder
+// itself, its child built under the same rules (skiff's scrolled() is made
+// so).
+template <class Child>
+auto collapsible(Child child) {
+  return skiff::compose::lifted([](auto made) { return Collapsible<decltype(made)>(std::move(made)); }, std::move(child));
+}
 
 // One panel of a SlideOver, on a sheet of its own: it takes every press on
 // it, so nothing under it can be reached through it.
