@@ -35,10 +35,22 @@ import std;
 export namespace skiff::ui {
 #ifdef SKIFF_UI_ON_SCENE
 // A stack on the scene, as made of what is mounted: compose's Box of them,
-// made at once -- the tree is mounted here, not described again.
-template <class... Parts> auto stackOn(bool across, skiff::compose::Look look, Parts... parts) {
+// every part built first under the rules the stack is built under -- a part
+// may be a builder (styled, projected: compose's own, lifted), and a Box of
+// unbuilt builders had nothing the scene could walk (no state of its own:
+// the calculator's keypad, in a Debug build, where builders are made at
+// once). The stack's own specs are applied to the Box as made.
+template <class... Parts>
+auto stackOn(bool across, skiff::compose::Look look, std::vector<scene::Spec> specs, Parts... parts) {
   look.fHorizontal = across;
-  return skiff::compose::erased(skiff::compose::Box(std::move(look), skiff::compose::as_part(std::move(parts))...));
+  return skiff::compose::lifted(
+      [specs = std::move(specs)](skiff::compose::Look l, auto... p) {
+        auto box = skiff::compose::erased(skiff::compose::Box(std::move(l), skiff::compose::as_part(std::move(p))...));
+        for (const scene::Spec &spec : specs)
+          box.apply(spec);
+        return box;
+      },
+      std::move(look), std::move(parts)...);
 }
 #endif
 
@@ -165,14 +177,17 @@ template <bool Across, class... P> struct Stack : detail::Applied {
           } else {
 #ifdef SKIFF_UI_ON_SCENE
             if constexpr (Across)
-              return stackOn(true, detail::lookOn(tag, fLook), mount(tag, std::move(each))...);
+              return stackOn(true, detail::lookOn(tag, fLook), fSpecs, mount(tag, std::move(each))...);
             else
-              return stackOn(false, detail::lookOn(tag, fLook), mount(tag, std::move(each))...);
+              return stackOn(false, detail::lookOn(tag, fLook), fSpecs, mount(tag, std::move(each))...);
 #endif
           }
         },
         fParts);
-    this->onto(made);
+    // On the scene the specs went into the stack as it is built (it may be
+    // a builder, which has no spec of its own to apply).
+    if constexpr (std::same_as<Tag, OnPage>)
+      this->onto(made);
     return made;
   }
 };
