@@ -130,8 +130,12 @@ public:
   // put in a column with no width was drawn nothing wide.
   bool fAutoWidth = false;
   void measure(const skia::SkRect &) {
+    // Nor one that grows: its flow gives it its share, which may be none --
+    // a row squeezed to nothing, a window made 20 pixels wide -- and taken
+    // for no width, it was made as wide as its label, and stayed so (auto
+    // from then on) when the row had room again: the calculator's keys.
     if ((!fAutoWidth && fState.fWidth != 0.0f) || fState.fRelativeSizeAxes.any(skiff::scene::axes::kX) ||
-        fState.fAutoSizeAxes.any(skiff::scene::axes::kX)) {
+        fState.fAutoSizeAxes.any(skiff::scene::axes::kX) || fState.fGrowAxes.any(skiff::scene::axes::kX)) {
       return;
     }
     skia::SkFont *font = skiff::paint::defaultFont();
