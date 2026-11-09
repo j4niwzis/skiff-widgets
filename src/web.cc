@@ -332,6 +332,20 @@ public:
     to.attr("type", "button");
     to.listen("click");
     to.text(fLabel);
+    // A theme of its own: drawn as the scene's button draws from it -- its
+    // surface, its text, its corners and its size -- on this element, so a
+    // program looks the same on the page and in a window.
+    if (fTheme) {
+      to.style(css::background_color{css::argb{fTheme->fSurface}});
+      to.style(css::color{css::argb{fTheme->fText}});
+      to.style(css::border_radius{css::sides{css::pixels{fTheme->fCorner}}});
+      to.style(css::font_size{css::pixels{fTheme->fFontSize}});
+      to.style(css::border{css::none{}});
+    }
+  }
+  void setTheme(Theme value) {
+    fTheme = std::move(value);
+    markDirty();
   }
   void read(E event) { fEvent = std::move(event); }
   void read(std::pair<std::string, E> value) {
@@ -350,6 +364,7 @@ public:
 private:
   std::string fLabel;
   E fEvent;
+  std::optional<Theme> fTheme;
 };
 
 

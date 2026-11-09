@@ -514,19 +514,27 @@ template <class Key, class T, class F> [[nodiscard]] Each<Key, T, F> each(F make
 template <class E> struct SendButton : detail::Applied {
   std::string fLabel;
   E fEvent;
+  // Its look, where it has one of its own: the same theme on both backends.
+  std::optional<skiff::widgets::Theme> fTheme;
   SendButton(std::string label, E event, scene::Spec spec = {}) : fLabel(std::move(label)), fEvent(std::move(event)) {
+    this->apply(spec);
+  }
+  SendButton(std::string label, E event, scene::Spec spec, skiff::widgets::Theme theme)
+      : fLabel(std::move(label)), fEvent(std::move(event)), fTheme(std::move(theme)) {
     this->apply(spec);
   }
   template <Backend Tag> auto on(Tag) && {
     if constexpr (std::same_as<Tag, OnPage>) {
 #ifdef SKIFF_UI_ON_PAGE
       skiff::widgets::web::SendButton<E> made(std::move(fLabel), std::move(fEvent));
+      if (fTheme) made.setTheme(std::move(*fTheme));
       this->onto(made);
       return made;
 #endif
     } else {
 #ifdef SKIFF_UI_ON_SCENE
       skiff::widgets::SendButton<E> made(std::move(fLabel), std::move(fEvent));
+      if (fTheme) made.setTheme(std::move(*fTheme));
       this->onto(made);
       return made;
 #endif
