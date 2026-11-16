@@ -52,6 +52,35 @@ auto stackOn(bool across, skiff::compose::Look look, std::vector<scene::Spec> sp
       },
       std::move(look), std::move(parts)...);
 }
+// A flow and a box of a colour on the scene, the same way: their parts
+// built first, then the node made of them, its specs applied. Made at once
+// of what was mounted, a flow held its parts' builders unbuilt -- the scene
+// never walked into them, and the model its tree is bound to (bind::RootOf)
+// left out the parts they keep: the site's counter, list and clock, under
+// its sides, missing from the scene's model ("the tree says other parts on
+// the scene than on the page").
+template <class... Parts>
+auto flowOn(scene::FlowOptions options, std::vector<scene::Spec> specs, Parts... parts) {
+  return skiff::compose::lifted(
+      [options, specs = std::move(specs)](auto... p) {
+        auto flow = skiff::nodes::Flow(options, skiff::compose::as_part(std::move(p))...);
+        for (const scene::Spec &spec : specs)
+          flow.apply(spec);
+        return flow;
+      },
+      std::move(parts)...);
+}
+template <class... Parts>
+auto colourBoxOn(scene::Colour colour, std::vector<scene::Spec> specs, Parts... parts) {
+  return skiff::compose::lifted(
+      [colour, specs = std::move(specs)](auto... p) {
+        auto box = skiff::nodes::Box<decltype(skiff::compose::as_part(std::move(p)))...>(colour, skiff::compose::as_part(std::move(p))...);
+        for (const scene::Spec &spec : specs)
+          box.apply(spec);
+        return box;
+      },
+      std::move(parts)...);
+}
 #endif
 
 namespace scene = skiff::scene;
@@ -223,12 +252,14 @@ template <class... P> struct Flow : detail::Applied {
 #endif
           } else {
 #ifdef SKIFF_UI_ON_SCENE
-            return skiff::nodes::Flow(fOptions, mount(tag, std::move(each))...);
+            return flowOn(fOptions, fSpecs, mount(tag, std::move(each))...);
 #endif
           }
         },
         fParts);
-    this->onto(made);
+    // On the scene the specs went into the flow as it is built.
+    if constexpr (std::same_as<Tag, OnPage>)
+      this->onto(made);
     return made;
   }
 };
@@ -290,12 +321,14 @@ template <class... P> struct Box : detail::Applied {
 #endif
           } else {
 #ifdef SKIFF_UI_ON_SCENE
-            return skiff::nodes::Box<Mounted<Tag, P>...>(fColour, mount(tag, std::move(each))...);
+            return colourBoxOn(fColour, fSpecs, mount(tag, std::move(each))...);
 #endif
           }
         },
         fParts);
-    this->onto(made);
+    // On the scene the specs went into the box as it is built.
+    if constexpr (std::same_as<Tag, OnPage>)
+      this->onto(made);
     return made;
   }
 };
