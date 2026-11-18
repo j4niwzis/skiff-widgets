@@ -66,7 +66,7 @@ if(COMMAND cme_declare_port AND NOT TARGET skiff::core)
     NAME skiff
     PROVIDES skiff
     GITHUB_REPOSITORY j4niwzis/skiff
-    GIT_TAG 04bbdd3cbdf8a3fcc46b9131d17d2999716144b4
+    GIT_TAG 4125d1c4de55793bc733ad9ea09ef1ed765c823d
     VERSION 0.1.0
   )
 endif()
